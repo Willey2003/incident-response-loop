@@ -494,7 +494,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Create Kind cluster
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1.14.0
         with:
           cluster_name: aegisforge-test
           config: scripts/kind-config.yaml

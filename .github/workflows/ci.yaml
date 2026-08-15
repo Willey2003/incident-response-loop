@@ -649,7 +649,7 @@ jobs:
           cosign attest --predicate sbom-ai-copilot.spdx.json --type spdx ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/ai-copilot:${{ github.ref_name }}
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             sbom-*.spdx.json

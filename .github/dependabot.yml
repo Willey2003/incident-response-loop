@@ -1,0 +1,139 @@
+# Dependabot configuration for automated dependency updates
+# See https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # Go modules
+  - package-ecosystem: "gomod"
+    directory: "/cmd/telemetry-sensor"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "go"
+      - "telemetry-sensor"
+    commit-message:
+      prefix: "chore(deps):"
+      include: "scope"
+    reviewers:
+      - "security-team"
+    groups:
+      kubernetes-client:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+      prometheus:
+        patterns:
+          - "github.com/prometheus/*"
+      uber-go:
+        patterns:
+          - "go.uber.org/*"
+
+  - package-ecosystem: "gomod"
+    directory: "/cmd/reconciler-engine"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "go"
+      - "reconciler-engine"
+    commit-message:
+      prefix: "chore(deps):"
+      include: "scope"
+    reviewers:
+      - "security-team"
+    groups:
+      kubernetes-client:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+      controller-runtime:
+        patterns:
+          - "sigs.k8s.io/controller-runtime*"
+
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/cmd/threat-contextualizer"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "python"
+      - "threat-contextualizer"
+    commit-message:
+      prefix: "chore(deps):"
+      include: "scope"
+    reviewers:
+      - "security-team"
+    groups:
+      fastapi:
+        patterns:
+          - "fastapi*"
+          - "uvicorn*"
+          - "pydantic*"
+      security:
+        patterns:
+          - "bandit*"
+          - "safety*"
+          - "pip-audit*"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(deps):"
+      include: "scope"
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/cmd/telemetry-sensor"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "telemetry-sensor"
+
+  - package-ecosystem: "docker"
+    directory: "/cmd/threat-contextualizer"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "threat-contextualizer"
+
+  - package-ecosystem: "docker"
+    directory: "/cmd/reconciler-engine"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "reconciler-engine"

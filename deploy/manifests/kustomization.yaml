@@ -1,0 +1,115 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: incident-response
+
+resources:
+- 00-namespace.yaml
+- 01-rbac.yaml
+- 02-telemetry-sensor.yaml
+- 03-threat-contextualizer.yaml
+- 04-reconciler-engine.yaml
+- 05-network-policies.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: incident-response-loop
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/version: "1.0.0"
+
+images:
+- name: registry.local/incident-response/telemetry-sensor
+  newTag: "1.0.0"
+- name: registry.local/incident-response/threat-contextualizer
+  newTag: "1.0.0"
+- name: registry.local/incident-response/reconciler-engine
+  newTag: "1.0.0"
+
+configMapGenerator:
+- name: telemetry-sensor-config
+  behavior: merge
+  literals:
+  - config.yaml=
+- name: threat-intel-data
+  behavior: merge
+  literals:
+  - threat_intel.json=
+- name: reconciler-engine-config
+  behavior: merge
+  literals:
+  - config.yaml=
+
+patches:
+# Enable resource limits for production
+- patch: |-
+    apiVersion: apps/v1
+    kind: DaemonSet
+    metadata:
+      name: telemetry-sensor
+      namespace: incident-response
+    spec:
+      template:
+        spec:
+          containers:
+          - name: telemetry-sensor
+            resources:
+              limits:
+                cpu: "1000m"
+                memory: "1Gi"
+  target:
+    kind: DaemonSet
+    labelSelector: "app.kubernetes.io/name=telemetry-sensor"
+
+# Adjust replicas for production
+- patch: |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: threat-contextualizer
+      namespace: incident-response
+    spec:
+      replicas: 3
+  target:
+    kind: Deployment
+    labelSelector: "app.kubernetes.io/name=threat-contextualizer"
+
+# Add anti-affinity for high availability
+- patch: |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: threat-contextualizer
+      namespace: incident-response
+    spec:
+      template:
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                      - threat-contextualizer
+                  topologyKey: kubernetes.io/hostname
+  target:
+    kind: Deployment
+    labelSelector: "app.kubernetes.io/name=threat-contextualizer"
+
+# Add pod disruption budget
+- patch: |-
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: threat-contextualizer-pdb
+      namespace: incident-response
+    spec:
+      minAvailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: threat-contextualizer
+  target:
+    kind: Deployment
+    labelSelector: "app.kubernetes.io/name=threat-contextualizer"

@@ -1,0 +1,182 @@
+# NetworkPolicy templates for the incident response system
+# These are reference templates - actual isolation policies are created dynamically by reconciler-engine
+
+---
+# Default deny-all policy for incident-response namespace (baseline protection)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: incident-response-network-policies
+    policy-type: baseline
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  # No ingress/egress rules = deny all
+---
+# Allow telemetry-sensor to scrape metrics from itself and other components
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metrics-scraping
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: incident-response-network-policies
+    policy-type: observability
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: incident-response-loop
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: prometheus
+    ports:
+    - protocol: TCP
+      port: 9090
+    - protocol: TCP
+      port: 8080
+---
+# Allow threat-contextualizer to receive alerts from telemetry-sensor
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-alert-ingress
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: incident-response-network-policies
+    policy-type: data-flow
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: threat-contextualizer
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: telemetry-sensor
+    ports:
+    - protocol: TCP
+      port: 8080
+---
+# Allow reconciler-engine to receive alerts from threat-contextualizer
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-action-ingress
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: incident-response-network-policies
+    policy-type: data-flow
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: reconciler-engine
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: threat-contextualizer
+    ports:
+    - protocol: TCP
+      port: 8080
+---
+# Allow reconciler-engine to communicate with Kubernetes API (via kube-proxy)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kube-api-egress
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: incident-response-network-policies
+    policy-type: kube-api
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: reconciler-engine
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 6443
+  - to:
+    - ipBlock:
+        cidr: 10.0.0.0/8  # Cluster CIDR - adjust for your environment
+    ports:
+    - protocol: TCP
+      port: 443
+---
+# Allow DNS resolution for all incident-response pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: incident-response-network-policies
+    policy-type: dns
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: incident-response-loop
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+# Example: Isolation policy template (created dynamically by reconciler)
+# This shows the structure of policies created during incident response
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: irp-isolate-example-pod-abc123
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: incident-response-network-policies
+    policy-type: isolation
+    incident-response/managed-by: reconciler-engine
+    incident-response/alert-id: "alert-xyz789"
+  annotations:
+    incident-response/created-by: "reconciler-engine-1"
+    incident-response/original-pod: "example-pod"
+    incident-response/threat-score: "0.950"
+    incident-response/expires-at: "2024-01-15T01:00:00Z"
+spec:
+  podSelector:
+    matchLabels:
+      app: example-app
+  policyTypes:
+  - Ingress
+  - Egress
+  # Empty rules = deny all (zero-trust isolation)
+  ingress: []
+  egress: []

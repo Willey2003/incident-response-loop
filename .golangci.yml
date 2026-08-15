@@ -1,0 +1,155 @@
+# golangci-lint configuration
+# See https://golangci-lint.run/usage/configuration/
+
+run:
+  # Timeout for analysis
+  deadline: 5m
+
+  # Exit code when issues found
+  issues-exit-code: 1
+
+  # Include test files
+  tests: true
+
+  # Skip directories
+  skip-dirs:
+    - vendor
+    - test
+    - .git
+
+  # Skip files
+  skip-files:
+    - ".*_test\\.go$"
+    - "mock.*\\.go$"
+
+  # Build tags
+  build-tags:
+    - integration
+
+linters:
+  # Disable all, then enable specific ones
+  disable-all: true
+  enable:
+    # Code correctness
+    - errcheck
+    - gosec
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - unconvert
+
+    # Style
+    - gofmt
+    - goimports
+    - gosimple
+    - stylecheck
+
+    # Performance
+    - prealloc
+    - gocritic
+
+    # Best practices
+    - bodyclose
+    - contextcheck
+    - durationcheck
+    - errorlint
+    - exportloopref
+    - goconst
+    - gocyclo
+    - goheader
+    - goprintffuncname
+    - gosec
+    - makezero
+    - misspell
+    - nakedret
+    - noctx
+    - nolintlint
+    - rowserrcheck
+    - sqlclosecheck
+    - testpackage
+    - thelper
+    - tparallel
+    - unparam
+    - wastedassign
+    - zerologlint
+
+  # Fast linters for quick feedback
+  fast: true
+
+linters-settings:
+  # gosec security checker
+  gosec:
+    excludes:
+      - G104 # Error not checked (common in tests)
+      - G115 # Integer overflow (false positives)
+    confidence: medium
+    severity: medium
+
+  # gocyclo complexity
+  gocyclo:
+    min-complexity: 15
+
+  # goconst string constants
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+  # misspell
+  misspell:
+    locale: US
+
+  # gocritic
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - wrapperFunc
+      - dupSubExpr
+
+  # staticcheck
+  staticcheck:
+    checks:
+      - all
+      - -ST1000 # Package comment (we document in README)
+      - -ST1003 # Underscore in names (Go idioms vary)
+
+  # govet
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment # Too noisy
+
+  # errcheck
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+issues:
+  # Exclude generated files
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - goconst
+        - gocyclo
+        - mnd
+        - gocritic
+
+    - path: mock
+      linters:
+        - gosec
+
+  # Max issues per linter
+  max-issues-per-linter: 50
+  max-same-issues: 10
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  uniq-by-line: true

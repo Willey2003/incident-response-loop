@@ -1,0 +1,189 @@
+# Pre-commit hooks configuration
+# See https://pre-commit.com/
+# Install: pre-commit install
+# Run: pre-commit run --all-files
+
+repos:
+# General file checks
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.5.0
+  hooks:
+    - id: trailing-whitespace
+      exclude: ^.*\.(md|txt)$
+    - id: end-of-file-fixer
+      exclude: ^.*\.(md|txt)$
+    - id: check-yaml
+      args: [--unsafe]
+    - id: check-added-large-files
+      args: [--maxkb=500]
+    - id: check-merge-conflict
+    - id: check-case-conflict
+    - id: check-json
+    - id: check-toml
+    - id: check-xml
+    - id: detect-private-key
+    - id: mixed-line-ending
+      args: [--fix=lf]
+    - id: no-commit-to-branch
+      args: [--branch, main, --branch, master]
+    - id: debug-logger
+
+# Go formatting and linting
+- repo: https://github.com/golangci/golangci-lint
+  rev: v1.59.0
+  hooks:
+    - id: golangci-lint
+      args: [--config=.golangci.yml]
+      types: [go]
+      require_serial: true
+
+# Go module tidy
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.5.0
+  hooks:
+    - id: go-mod-tidy
+      name: go mod tidy
+      entry: go mod tidy
+      language: system
+      types: [go]
+      pass_filenames: false
+
+# Python formatting and linting (Ruff)
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.2.0
+  hooks:
+    - id: ruff
+      args: [--fix, --exit-non-zero-on-fix]
+      types: [python]
+    - id: ruff-format
+      types: [python]
+
+# Python security
+- repo: https://github.com/pycqa/bandit
+  rev: 1.7.6
+  hooks:
+    - id: bandit
+      args: [-r, cmd/threat-contextualizer/src, -ll, -f, json, -o, bandit-report.json]
+      types: [python]
+      require_serial: true
+
+# YAML linting
+- repo: https://github.com/adrienverge/yamllint
+  rev: v1.35.1
+  hooks:
+    - id: yamllint
+      args: [-c, .yamllint.yml]
+      types: [yaml]
+      exclude: ^deploy/manifests/overlays/
+
+# Dockerfile linting
+- repo: https://github.com/hadolint/hadolint
+  rev: v2.12.0
+  hooks:
+    - id: hadolint-docker
+      args: [--config=.hadolint.yaml]
+      types: [dockerfile]
+
+# Shell script linting
+- repo: https://github.com/shellcheck-py/shellcheck-py
+  rev: v0.9.0.6
+  hooks:
+    - id: shellcheck
+      types: [shell]
+      exclude: ^scripts/kind-config\.yaml$
+
+# Secret detection
+- repo: https://github.com/gitleaks/gitleaks
+  rev: v8.18.0
+  hooks:
+    - id: gitleaks
+      args: [--config=.gitleaks.toml, --verbose]
+      types: [text]
+      exclude: ^.*\.(md|txt|example|template|sample)$
+
+# Kubernetes manifest validation
+- repo: https://github.com/JohannesPausch/kubeval-pre-commit
+  rev: v0.1.1
+  hooks:
+    - id: kubeval
+      args: [--strict, --ignore-missing-schemas, --kubernetes-version, 1.28.0]
+      types: [yaml]
+      files: ^deploy/
+
+# Checkov for IaC security
+- repo: https://github.com/bridgecrewio/checkov
+  rev: 3.1.0
+  hooks:
+    - id: checkov
+      args: [-d, deploy/, --quiet, --compact, --framework, kubernetes]
+      types: [yaml]
+      require_serial: true
+
+# License headers
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.5.0
+  hooks:
+    - id: forbid-new-submodules
+
+# Spell checking
+- repo: https://github.com/crate-ci/typos
+  rev: v1.18.0
+  hooks:
+    - id: typos
+      args: [--config, .typos.toml]
+
+# Custom script checks
+- repo: local
+  hooks:
+    - id: check-go-version
+      name: Check Go version in go.mod
+      entry: bash -c 'grep -q "go 1.22" cmd/telemetry-sensor/go.mod cmd/reconciler-engine/go.mod'
+      language: system
+      pass_filenames: false
+      always_run: true
+
+    - id: check-python-version
+      name: Check Python version
+      entry: bash -c 'grep -q "requires-python = \">=3.11\"" cmd/threat-contextualizer/pyproject.toml'
+      language: system
+      pass_filenames: false
+      always_run: true
+
+    - id: check-dockerignore
+      name: Check .dockerignore exists
+      entry: bash -c 'test -f cmd/telemetry-sensor/.dockerignore && test -f cmd/threat-contextualizer/.dockerignore && test -f cmd/reconciler-engine/.dockerignore'
+      language: system
+      pass_filenames: false
+      always_run: true
+
+    - id: check-license
+      name: Check LICENSE file exists
+      entry: bash -c 'test -f LICENSE'
+      language: system
+      pass_filenames: false
+      always_run: true
+
+    - id: check-readme
+      name: Check README.md exists
+      entry: bash -c 'test -f README.md'
+      language: system
+      pass_filenames: false
+      always_run: true
+
+    - id: check-security-md
+      name: Check SECURITY.md exists
+      entry: bash -c 'test -f SECURITY.md'
+      language: system
+      pass_filenames: false
+      always_run: true
+
+# Run tests on commit (optional, can be slow)
+# - repo: local
+#   hooks:
+#     - id: go-test
+#       name: Run Go tests
+#       entry: go test ./cmd/... ./pkg/...
+#       language: system
+#       pass_filenames: false
+#       always_run: true
+#       stages: [commit]

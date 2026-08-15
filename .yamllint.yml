@@ -1,0 +1,113 @@
+# yamllint configuration
+# See https://yamllint.readthedocs.io/en/stable/configuration.html
+
+extends: default
+
+rules:
+  # Line length
+  line-length:
+    max: 120
+    level: warning
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+
+  # Indentation
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+    level: error
+
+  # Trailing spaces
+  trailing-spaces: error
+
+  # Empty lines
+  empty-lines:
+    max: 2
+    max-start: 1
+    max-end: 1
+    level: warning
+
+  # Comments
+  comments:
+    level: warning
+    require-starting-space: true
+    min-spaces-from-content: 2
+
+  # Document start
+  document-start:
+    present: true
+    level: warning
+
+  # Document end
+  document-end:
+    present: true
+    level: warning
+
+  # Key ordering
+  key-ordering:
+    level: disabled
+
+  # Brackets
+  brackets:
+    level: error
+
+  # Braces
+  braces:
+    level: error
+
+  # Colons
+  colons:
+    level: error
+
+  # Commas
+  commas:
+    level: error
+
+  # Hyphens
+  hyphens:
+    level: error
+
+  # Quotes
+  quotes:
+    level: warning
+    required: only-when-needed
+
+  # Truthy
+  truthy:
+    level: warning
+    allowed-values: ["true", "false", "yes", "no", "on", "off"]
+
+  # Octal values
+  octal-values:
+    level: error
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
+
+# Files to ignore
+ignore: |
+  .git/
+  .github/
+  node_modules/
+  vendor/
+  dist/
+  build/
+  *.egg-info/
+  __pycache__/
+  .venv/
+  venv/
+  .terraform/
+  *.tfstate
+  *.tfstate.*
+  *.tfvars
+  docker-compose.override.yml
+  .env
+  .env.*
+  secrets/
+  *.pem
+  *.key
+  *.crt
+  *.kubeconfig
+
+# Kubernetes-specific allowances
+# Allow longer lines for complex k8s manifests
+# Allow specific patterns in k8s files

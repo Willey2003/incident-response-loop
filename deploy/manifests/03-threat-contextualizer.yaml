@@ -1,0 +1,208 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threat-contextualizer
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: threat-contextualizer
+    app.kubernetes.io/part-of: incident-response-loop
+    app.kubernetes.io/component: processing
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: threat-contextualizer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: threat-contextualizer
+        app.kubernetes.io/part-of: incident-response-loop
+        app.kubernetes.io/component: processing
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: threat-contextualizer
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: threat-contextualizer
+        image: registry.local/incident-response/threat-contextualizer:1.0.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: SERVICE_NAME
+          value: "threat-contextualizer"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: LOG_FORMAT
+          value: "json"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "8080"
+        - name: WORKERS
+          value: "2"
+        - name: TI_MOCK_DATA_PATH
+          value: "/app/data/threat_intel.json"
+        - name: RECONCILER_URL
+          value: "http://reconciler-engine.incident-response.svc.cluster.local:8080/api/v1/actions"
+        - name: RECONCILER_TIMEOUT_SEC
+          value: "5"
+        - name: HTTP_MAX_CONNECTIONS
+          value: "100"
+        - name: HTTP_MAX_KEEPALIVE
+          value: "20"
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        volumeMounts:
+        - name: threat-intel
+          mountPath: /app/data
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: threat-intel
+        configMap:
+          name: threat-intel-data
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: threat-intel-data
+  namespace: incident-response
+data:
+  threat_intel.json: |
+    {
+      "version": "1.0",
+      "updated": "2024-01-15T00:00:00Z",
+      "source": "mock",
+      "description": "Mock threat intelligence database for testing",
+      "threat_intelligence": [
+        {
+          "id": "CVE-2021-44228",
+          "type": "cve",
+          "category": "payload",
+          "pattern": "log4j|jndi:ldap|jndi:rmi|\\$\\{jndi:",
+          "pattern_type": "regex",
+          "severity": "critical",
+          "confidence": 0.95,
+          "description": "Log4Shell RCE vulnerability in Apache Log4j",
+          "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-44228"],
+          "tags": ["rce", "log4j", "java", "deserialization"]
+        },
+        {
+          "id": "T1059.004",
+          "type": "mitre",
+          "category": "behavior",
+          "pattern": "powershell|powershell.exe|pwsh|Invoke-Expression|IEX|DownloadString",
+          "pattern_type": "regex",
+          "severity": "high",
+          "confidence": 0.8,
+          "description": "MITRE ATT&CK T1059.004 - PowerShell",
+          "references": ["https://attack.mitre.org/techniques/T1059/004/"],
+          "tags": ["execution", "powershell", "lolbin"]
+        },
+        {
+          "id": "IOC-COBEACON-001",
+          "type": "ioc",
+          "category": "infrastructure",
+          "pattern": "cobaltstrike|beacon|artifactkit|malleable",
+          "pattern_type": "regex",
+          "severity": "critical",
+          "confidence": 0.95,
+          "description": "Cobalt Strike Beacon indicators",
+          "tags": ["c2", "cobalt-strike", "beacon"]
+        },
+        {
+          "id": "IOC-MIMIKATZ-001",
+          "type": "ioc",
+          "category": "payload",
+          "pattern": "mimikatz|sekurlsa|lsass|wdigest|credential.*dump",
+          "pattern_type": "regex",
+          "severity": "critical",
+          "confidence": 0.95,
+          "description": "Mimikatz credential dumping tool",
+          "tags": ["credential-theft", "mimikatz", "lsass"]
+        },
+        {
+          "id": "IOC-REVSHELL-001",
+          "type": "ioc",
+          "category": "network",
+          "pattern": "reverse.*shell|revshell|bash.*-i|/dev/tcp|nc.*-e|ncat.*-e",
+          "pattern_type": "regex",
+          "severity": "critical",
+          "confidence": 0.9,
+          "description": "Reverse shell patterns",
+          "tags": ["reverse-shell", "backdoor"]
+        },
+        {
+          "id": "IOC-CRYPTOMINER-001",
+          "type": "ioc",
+          "category": "behavior",
+          "pattern": "xmrig|minergate|cryptonight|monero|stratum\\+tcp|coin.*mine",
+          "pattern_type": "regex",
+          "severity": "high",
+          "confidence": 0.9,
+          "description": "Cryptocurrency miner indicators",
+          "tags": ["cryptominer", "resource-hijacking"]
+        },
+        {
+          "id": "IOC-KUBECTL-001",
+          "type": "ioc",
+          "category": "behavior",
+          "pattern": "kubectl|k8s|kubernetes.*api|serviceaccount|token.*mount",
+          "pattern_type": "regex",
+          "severity": "medium",
+          "confidence": 0.7,
+          "description": "Kubernetes reconnaissance/attack patterns",
+          "tags": ["kubernetes", "reconnaissance"]
+        }
+      ]
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: threat-contextualizer
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: threat-contextualizer
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  - port: 9090
+    targetPort: 9090
+    name: metrics
+  selector:
+    app.kubernetes.io/name: threat-contextualizer

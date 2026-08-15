@@ -1,0 +1,95 @@
+# Binaries and compiled artifacts
+*.exe
+*.out
+*.test
+*.prof
+*.bin
+telemetry-sensor
+threat-contextualizer
+reconciler-engine
+
+# Go build artifacts
+go.sum
+go.work
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Kubernetes and infrastructure secrets
+*.kubeconfig
+*kubeconfig*
+*.pem
+*.key
+*.crt
+*.csr
+ca.bundle
+*.kube/config
+.vsphere-credentials*
+*.ovf
+*.ova
+*.vmdk
+
+# Local registry and Docker
+.docker/
+docker-compose.override.yml
+registry/
+*.tar
+
+# Terraform and IaC
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+/tmp/
+/var/log/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Test artifacts
+test-results/
+coverage.out
+chaos-test-output/
+
+# OS specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Helm
+helm/.helm/
+charts/
+*.tgz
+
+# Generated manifests (keep templates, ignore rendered)
+deploy/manifests/rendered/
+
+# Profiling
+*.pprof

@@ -1,0 +1,521 @@
+name: CI - Build, Test & Security Scan
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*']
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly security scan
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  GO_VERSION: '1.22'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # ============================================================
+  # LINTING
+  # ============================================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.59
+          args: --config=.golangci.yml
+          only-new-issues: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install Ruff
+        run: pip install ruff==0.2.0
+
+      - name: Lint Python with Ruff
+        run: |
+          cd cmd/threat-contextualizer
+          ruff check src/ tests/
+          ruff format --check src/ tests/
+
+      - name: Lint YAML
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          config_file: .yamllint.yml
+          strict: true
+
+      - name: Lint Dockerfiles
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          config: .hadolint.yaml
+          recursive: true
+
+      - name: Check Go mod tidy
+        run: |
+          cd cmd/telemetry-sensor && go mod tidy && git diff --exit-code
+          cd cmd/reconciler-engine && go mod tidy && git diff --exit-code
+
+  # ============================================================
+  # SECURITY SCANNING
+  # ============================================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -fmt sarif -out results.sarif ./cmd/... ./pkg/...
+        continue-on-error: true
+
+      - name: Upload gosec results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+          category: gosec
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./cmd/... ./pkg/...
+        continue-on-error: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install security tools
+        run: |
+          pip install bandit safety pip-audit
+
+      - name: Run bandit
+        run: |
+          cd cmd/threat-contextualizer
+          bandit -r src/ -f json -o bandit-report.json || true
+
+      - name: Run safety
+        run: |
+          cd cmd/threat-contextualizer
+          safety check --json --output safety-report.json || true
+
+      - name: Run pip-audit
+        run: |
+          cd cmd/threat-contextualizer
+          pip-audit --format=json --output=pip-audit-report.json || true
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs.sarif'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+
+      - name: Upload Trivy FS results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  # ============================================================
+  # GO UNIT TESTS
+  # ============================================================
+  test-go:
+    name: Go Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run Go tests
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./cmd/... ./pkg/...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          flags: go
+          fail_ci_if_error: false
+
+  # ============================================================
+  # PYTHON UNIT TESTS
+  # ============================================================
+  test-python:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd cmd/threat-contextualizer
+          pip install uv
+          uv sync --all-extras
+
+      - name: Run Python tests
+        run: |
+          cd cmd/threat-contextualizer
+          pytest -v --cov=contextualizer --cov-report=xml --cov-report=term-missing tests/
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./cmd/threat-contextualizer/coverage.xml
+          flags: python
+          fail_ci_if_error: false
+
+  # ============================================================
+  # BUILD DOCKER IMAGES
+  # ============================================================
+  build:
+    name: Build & Push Images
+    needs: [lint, security, test-go, test-python]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for telemetry-sensor
+        id: meta-sensor
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push telemetry-sensor
+        uses: docker/build-push-action@v5
+        with:
+          context: ./cmd/telemetry-sensor
+          push: true
+          tags: ${{ steps.meta-sensor.outputs.tags }}
+          labels: ${{ steps.meta-sensor.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Extract metadata for threat-contextualizer
+        id: meta-contextualizer
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push threat-contextualizer
+        uses: docker/build-push-action@v5
+        with:
+          context: ./cmd/threat-contextualizer
+          push: true
+          tags: ${{ steps.meta-contextualizer.outputs.tags }}
+          labels: ${{ steps.meta-contextualizer.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Extract metadata for reconciler-engine
+        id: meta-reconciler
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push reconciler-engine
+        uses: docker/build-push-action@v5
+        with:
+          context: ./cmd/reconciler-engine
+          push: true
+          tags: ${{ steps.meta-reconciler.outputs.tags }}
+          labels: ${{ steps.meta-reconciler.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+  # ============================================================
+  # INTEGRATION TESTS (Kind cluster)
+  # ============================================================
+  integration-test:
+    name: Integration Tests
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: incident-response-test
+          config: scripts/kind-config.yaml
+          image: kindest/node:v1.28.0
+
+      - name: Load images into Kind
+        run: |
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor:latest --name incident-response-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer:latest --name incident-response-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine:latest --name incident-response-test
+
+      - name: Deploy with Kustomize
+        run: |
+          kubectl apply -k deploy/manifests/overlays/development
+          kubectl wait --for=condition=available --timeout=300s deployment/threat-contextualizer -n incident-response
+          kubectl wait --for=condition=available --timeout=300s deployment/reconciler-engine -n incident-response
+          kubectl wait --for=condition=ready --timeout=300s pod -l app.kubernetes.io/name=telemetry-sensor -n incident-response
+
+      - name: Run integration tests
+        run: |
+          # Wait for pods to be ready
+          sleep 30
+          
+          # Test sensor -> contextualizer flow
+          kubectl exec -n incident-response deployment/threat-contextualizer -- curl -f http://localhost:8080/api/v1/health
+          
+          # Test reconciler health
+          kubectl exec -n incident-response deployment/reconciler-engine -- curl -f http://localhost:8080/api/v1/health
+
+      - name: Run chaos test (smoke)
+        run: |
+          cd test/chaos
+          pip install -r requirements.txt
+          python chaos_test.py --namespace incident-response --duration 60 --scenarios burst_traffic payload_spike
+
+  # ============================================================
+  # RELEASE - Generate SBOM, Sign, Create Release
+  # ============================================================
+  release:
+    name: Release
+    needs: [build, integration-test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.5.0
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0.17.0
+
+      - name: Download telemetry-sensor image
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor:${{ github.ref_name }} sensor-image:local
+
+      - name: Generate SBOM for telemetry-sensor
+        run: |
+          syft sensor-image:local -o spdx-json=sbom-sensor.spdx.json
+          syft sensor-image:local -o cyclonedx-json=sbom-sensor.cdx.json
+
+      - name: Sign telemetry-sensor
+        run: |
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor:${{ github.ref_name }}
+
+      - name: Attest SBOM for telemetry-sensor
+        run: |
+          cosign attest --predicate sbom-sensor.spdx.json --type spdx \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor:${{ github.ref_name }}
+
+      - name: Download threat-contextualizer image
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer:${{ github.ref_name }} contextualizer-image:local
+
+      - name: Generate SBOM for threat-contextualizer
+        run: |
+          syft contextualizer-image:local -o spdx-json=sbom-contextualizer.spdx.json
+          syft contextualizer-image:local -o cyclonedx-json=sbom-contextualizer.cdx.json
+
+      - name: Sign threat-contextualizer
+        run: |
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer:${{ github.ref_name }}
+
+      - name: Attest SBOM for threat-contextualizer
+        run: |
+          cosign attest --predicate sbom-contextualizer.spdx.json --type spdx \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer:${{ github.ref_name }}
+
+      - name: Download reconciler-engine image
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine:${{ github.ref_name }} reconciler-image:local
+
+      - name: Generate SBOM for reconciler-engine
+        run: |
+          syft reconciler-image:local -o spdx-json=sbom-reconciler.spdx.json
+          syft reconciler-image:local -o cyclonedx-json=sbom-reconciler.cdx.json
+
+      - name: Sign reconciler-engine
+        run: |
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine:${{ github.ref_name }}
+
+      - name: Attest SBOM for reconciler-engine
+        run: |
+          cosign attest --predicate sbom-reconciler.spdx.json --type spdx \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine:${{ github.ref_name }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sbom-*.spdx.json
+            sbom-*.cdx.json
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+
+  # ============================================================
+  # DEPENDENCY UPDATE CHECK
+  # ============================================================
+  dependency-check:
+    name: Dependency Update Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Check Go updates
+        run: |
+          cd cmd/telemetry-sensor && go list -u -m -json all | go-mod-outdated -update -direct
+          cd cmd/reconciler-engine && go list -u -m -json all | go-mod-outdated -update -direct
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Check Python updates
+        run: |
+          cd cmd/threat-contextualizer
+          pip install uv
+          uv lock --upgrade
+          git diff uv.lock
+
+      - name: Create PR for updates
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update dependencies"
+          title: "chore: weekly dependency updates"
+          body: |
+            Automated dependency updates from scheduled CI run.
+            Please review and merge if tests pass.
+          branch: dependency-updates
+          delete-branch: true

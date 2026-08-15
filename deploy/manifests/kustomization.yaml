@@ -18,11 +18,14 @@ commonLabels:
 
 images:
 - name: registry.local/incident-response/telemetry-sensor
-  newTag: "1.0.0"
+  newName: willey2003/incident-response-telemetry-sensor
+  newTag: "latest"
 - name: registry.local/incident-response/threat-contextualizer
-  newTag: "1.0.0"
+  newName: willey2003/incident-response-threat-contextualizer
+  newTag: "latest"
 - name: registry.local/incident-response/reconciler-engine
-  newTag: "1.0.0"
+  newName: willey2003/incident-response-reconciler-engine
+  newTag: "latest"
 
 configMapGenerator:
 - name: telemetry-sensor-config

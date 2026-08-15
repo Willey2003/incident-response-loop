@@ -1,0 +1,147 @@
+{{- if .Values.global.observability.grafana.dashboards }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-grafana-dashboards
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  aegisforge-overview.json: |
+    {
+      "dashboard": {
+        "title": "AegisForge Overview",
+        "uid": "aegisforge-overview",
+        "tags": ["aegisforge", "overview"],
+        "timezone": "utc",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Active Alerts",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(alerts_total{namespace=\"{{ include \"aegisforge.namespace\" . }}\"})",
+                "legendFormat": "Active Alerts"
+              }
+            ],
+            "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4}
+          },
+          {
+            "id": 2,
+            "title": "Open Incidents",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(incidents_total{namespace=\"{{ include \"aegisforge.namespace\" . }}\", status=~\"open|investigating\"})",
+                "legendFormat": "Open Incidents"
+              }
+            ],
+            "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4}
+          },
+          {
+            "id": 3,
+            "title": "Response Actions (Last 24h)",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(increase(response_actions_total[24h]))",
+                "legendFormat": "Actions"
+              }
+            ],
+            "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4}
+          },
+          {
+            "id": 4,
+            "title": "AI Inference Latency (p95)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(ai_copilot_inference_duration_seconds_bucket[5m]))",
+                "legendFormat": "p95"
+              }
+            ],
+            "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4}
+          },
+          {
+            "id": 5,
+            "title": "Alert Volume (24h)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(alerts_total[5m])) by (severity)",
+                "legendFormat": "{{severity}}"
+              }
+            ],
+            "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8}
+          },
+          {
+            "id": 6,
+            "title": "Response Action Success Rate",
+            "type": "gauge",
+            "targets": [
+              {
+                "expr": "sum(rate(response_actions_completed_total[5m])) / sum(rate(response_actions_total[5m])) * 100",
+                "legendFormat": "Success Rate %"
+              }
+            ],
+            "gridPos": {"x": 12, "y": 4, "w": 6, "h": 8}
+          },
+          {
+            "id": 7,
+            "title": "Active Emulation Runs",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(emulation_runs_active)",
+                "legendFormat": "Active Runs"
+              }
+            ],
+            "gridPos": {"x": 18, "y": 4, "w": 6, "h": 4}
+          },
+          {
+            "id": 8,
+            "title": "Detection Engine Throughput",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(detection_events_processed_total[5m]))",
+                "legendFormat": "Events/sec"
+              }
+            ],
+            "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8}
+          },
+          {
+            "id": 9,
+            "title": "Response Action Latency (p95)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(response_action_duration_seconds_bucket[5m]))",
+                "legendFormat": "p95 Latency"
+              }
+            ],
+            "gridPos": {"x": 12, "y": 12, "w": 6, "h": 8}
+          },
+          {
+            "id": 10,
+            "title": "AI Inference Throughput",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(ai_copilot_tokens_total[5m]))",
+                "legendFormat": "Tokens/sec"
+              }
+            ],
+            "gridPos": {"x": 18, "y": 12, "w": 6, "h": 8}
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "30s"
+      }
+    }
+{{- end }}

@@ -1,0 +1,267 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-detection-engine
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: detection-engine
+    app.kubernetes.io/component: detection-engine
+spec:
+  replicas: {{ .Values.detectionEngine.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: detection-engine
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: detection-engine
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: detection-engine
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "aegisforge.fullname" . }}-detection-engine
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: detection-engine
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.global.imagePrefix | default "aegisforge" }}/detection-engine:{{ .Values.global.imageTag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: {{ .Values.global.environment | default "production" }}
+        - name: LOG_LEVEL
+          value: {{ .Values.global.logLevel | default "INFO" }}
+        - name: POSTGRES_HOST
+          value: {{ include "aegisforge.fullname" . }}-postgres
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: {{ .Values.global.database.postgresql.dbName | default "aegisforge" }}
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: password
+        - name: REDPANDA_BROKERS
+          value: {{ include "aegisforge.fullname" . }}-redpanda:9092
+        - name: REDPANDA_TOPIC_EVENTS
+          value: security-events
+        - name: REDPANDA_TOPIC_ALERTS
+          value: security-alerts
+        - name: REDPANDA_CONSUMER_GROUP
+          value: detection-engine
+        - name: DETECTION_RULES_PATH
+          value: /etc/aegisforge/rules
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: {{ .Values.global.observability.otelCollector.endpoint | default "http://otel-collector:4317" }}
+        - name: OTEL_SERVICE_NAME
+          value: detection-engine
+        resources:
+          {{- toYaml .Values.detectionEngine.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /etc/aegisforge
+          readOnly: true
+        - name: rules
+          mountPath: /etc/aegisforge/rules
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-detection-engine-config
+      - name: rules
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-detection-rules
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-detection-engine
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: detection-engine
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: detection-engine
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-detection-engine-config
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    environment: production
+    log_level: info
+    log_format: json
+    redpanda_brokers: "{{ include "aegisforge.fullname" . }}-redpanda:9092"
+    redpanda_topic_events: security-events
+    redpanda_topic_alerts: security-alerts
+    detection_rules_path: /etc/aegisforge/rules
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-detection-rules
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  det-001.yaml: |
+    rule_id: "DET-001"
+    name: "Repeated Failed Authentication"
+    description: "Detects repeated failed login attempts from same source"
+    severity: "high"
+    enabled: true
+    mitre_techniques: ["T1110.001", "T1110.003"]
+    condition_group:
+      operator: "and"
+      conditions:
+      - field: "event_type"
+        operator: "equals"
+        value: "login_failed"
+      - field: "source_ip"
+        operator: "exists"
+    correlation_window_seconds: 300
+    correlation_threshold: 5
+    correlation_group_by: ["source_ip", "username"]
+    actions:
+    - action_type: "create_alert"
+      severity: "high"
+  det-002.yaml: |
+    rule_id: "DET-002"
+    name: "Privileged Container Creation"
+    description: "Detects creation of privileged containers"
+    severity: "high"
+    enabled: true
+    mitre_techniques: ["T1611", "T1610"]
+    condition_group:
+      operator: "and"
+      conditions:
+      - field: "event_type"
+        operator: "equals"
+        value: "container_create"
+      - field: "privileged"
+        operator: "equals"
+        value: true
+    actions:
+    - action_type: "create_alert"
+      severity: "high"
+  det-003.yaml: |
+    rule_id: "DET-003"
+    name: "DNS Tunneling Detection"
+    description: "Detects potential DNS tunneling based on entropy and query patterns"
+    severity: "high"
+    enabled: true
+    mitre_techniques: ["T1048.003", "T1572"]
+    condition_group:
+      operator: "and"
+      conditions:
+      - field: "event_type"
+        operator: "equals"
+        value: "dns_query"
+      - field: "entropy_score"
+        operator: "greater_than"
+        value: 0.8
+    actions:
+    - action_type: "create_alert"
+      severity: "high"
+  det-004.yaml: |
+    rule_id: "DET-004"
+    name: "Cryptocurrency Mining Process"
+    description: "Detects known cryptominer process names"
+    severity: "high"
+    enabled: true
+    mitre_techniques: ["T1496"]
+    condition_group:
+      operator: "and"
+      conditions:
+      - field: "event_type"
+        operator: "equals"
+        value: "process_start"
+      - field: "process_name"
+        operator: "regex"
+        value: "(xmrig|minergate|cryptonight|monero|stratum)"
+    actions:
+    - action_type: "create_alert"
+      severity: "high"
+  det-005.yaml: |
+    rule_id: "DET-005"
+    name: "Large Data Transfer"
+    description: "Detects unusual large data transfers"
+    severity: "high"
+    enabled: true
+    mitre_techniques: ["T1041", "T1048.003"]
+    condition_group:
+      operator: "and"
+      conditions:
+      - field: "event_type"
+        operator: "equals"
+        value: "network_connection"
+      - field: "bytes_total"
+        operator: "greater_than"
+        value: 100000000
+    actions:
+    - action_type: "create_alert"
+      severity: "high"
+  det-006.yaml: |
+    rule_id: "DET-006"
+    name: "Container Escape Attempt"
+    description: "Detects container escape via privileged operations"
+    severity: "critical"
+    enabled: true
+    mitre_techniques: ["T1611", "T1610", "T1609"]
+    condition_group:
+      operator: "or"
+      conditions:
+      - field: "event_type"
+        operator: "equals"
+        value: "container_escape"
+      - field: "event_type"
+        operator: "equals"
+        value: "kernel_exploit"
+      - field: "event_type"
+        operator: "equals"
+        value: "syscall_anomaly"
+    actions:
+    - action_type: "create_alert"
+      severity: "critical"

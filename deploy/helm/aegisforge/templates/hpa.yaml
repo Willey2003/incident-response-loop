@@ -1,0 +1,90 @@
+{{- if .Values.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-api-gateway-hpa
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "aegisforge.fullname" . }}-api-gateway
+  minReplicas: {{ .Values.hpa.apiGateway.minReplicas }}
+  maxReplicas: {{ .Values.hpa.apiGateway.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.hpa.apiGateway.targetCPUUtilization }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-detection-engine-hpa
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "aegisforge.fullname" . }}-detection-engine
+  minReplicas: {{ .Values.hpa.detectionEngine.minReplicas }}
+  maxReplicas: {{ .Values.hpa.detectionEngine.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.hpa.detectionEngine.targetCPUUtilization }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-ai-copilot-hpa
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "aegisforge.fullname" . }}-ai-copilot
+  minReplicas: {{ .Values.hpa.aiCopilot.minReplicas }}
+  maxReplicas: {{ .Values.hpa.aiCopilot.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.hpa.aiCopilot.targetCPUUtilization }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-target-api-hpa
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "aegisforge.fullname" . }}-target-api
+  minReplicas: {{ .Values.hpa.targetApi.minReplicas }}
+  maxReplicas: {{ .Values.hpa.targetApi.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.hpa.targetApi.targetCPUUtilization }}
+{{- end }}

@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-api-gateway
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/component: api-gateway
+spec:
+  replicas: {{ .Values.apiGateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api-gateway
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: api-gateway
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "aegisforge.fullname" . }}-api-gateway
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: api-gateway
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.global.imagePrefix | default "aegisforge" }}/api-gateway:{{ .Values.global.imageTag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: {{ .Values.global.environment | default "production" }}
+        - name: LOG_LEVEL
+          value: {{ .Values.global.logLevel | default "INFO" }}
+        - name: POSTGRES_HOST
+          value: {{ include "aegisforge.fullname" . }}-postgres
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: {{ .Values.global.database.postgresql.dbName | default "aegisforge" }}
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: password
+        - name: REDPANDA_BROKERS
+          value: {{ include "aegisforge.fullname" . }}-redpanda:9092
+        - name: REDIS_URL
+          value: redis://{{ include "aegisforge.fullname" . }}-redis:6379/0
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-jwt-secret
+              key: jwt-secret
+        - name: OIDC_ISSUER_URL
+          value: ""
+        - name: OIDC_CLIENT_ID
+          value: ""
+        - name: OIDC_CLIENT_SECRET
+          value: ""
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: {{ .Values.global.observability.otelCollector.endpoint | default "http://otel-collector:4317" }}
+        - name: OTEL_SERVICE_NAME
+          value: api-gateway
+        resources:
+          {{- toYaml .Values.apiGateway.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /etc/aegisforge
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-api-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-api-gateway
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: api-gateway
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-api-gateway-config
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    environment: production
+    log_level: info
+    log_format: json
+    api_host: 0.0.0.0
+    api_port: 8000
+    api_workers: 4

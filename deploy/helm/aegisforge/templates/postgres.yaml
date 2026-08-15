@@ -1,0 +1,506 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-postgres
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+spec:
+  serviceName: {{ include "aegisforge.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: database
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+      - name: postgres
+        image: "{{ .Values.global.imageRegistry }}/postgres:{{ .Values.global.database.postgresql.version | default "16" }}-alpine"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - name: postgres
+          containerPort: 5432
+          protocol: TCP
+        env:
+        - name: POSTGRES_DB
+          value: {{ .Values.global.database.postgresql.dbName | default "aegisforge" }}
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: password
+        - name: POSTGRES_INITDB_ARGS
+          value: "--auth-host=scram-sha-256"
+        resources:
+          {{- toYaml .Values.global.database.postgresql.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+          subPath: postgres
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
+          readOnly: true
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: init-scripts
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-postgres-init
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: {{ .Values.global.storageClass | default "fast-ssd" }}
+      resources:
+        requests:
+          storage: {{ .Values.global.database.postgresql.persistence.size | default "50Gi" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-postgres
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: postgres
+spec:
+  type: ClusterIP
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-postgres-init
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  init.sql: |
+    -- AegisForge PostgreSQL Initialization Script
+    CREATE DATABASE aegisforge;
+    CREATE DATABASE keycloak;
+    
+    CREATE USER aegisforge WITH PASSWORD 'changeme_dev_only';
+    CREATE USER keycloak WITH PASSWORD 'keycloak';
+    
+    GRANT ALL PRIVILEGES ON DATABASE aegisforge TO aegisforge;
+    GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
+    
+    \c aegisforge;
+    
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    CREATE EXTENSION IF NOT EXISTS "btree_gin";
+    CREATE EXTENSION IF NOT EXISTS "btree_gist";
+    
+    CREATE SCHEMA IF NOT EXISTS aegisforge;
+    CREATE SCHEMA IF NOT EXISTS audit;
+    CREATE SCHEMA IF NOT EXISTS detection;
+    CREATE SCHEMA IF NOT EXISTS response;
+    CREATE SCHEMA IF NOT EXISTS emulation;
+    CREATE SCHEMA IF NOT EXISTS assets;
+    
+    ALTER DATABASE aegisforge SET search_path TO aegisforge, audit, detection, response, emulation, assets, public;
+    
+    GRANT ALL ON SCHEMA aegisforge TO aegisforge;
+    GRANT ALL ON SCHEMA audit TO aegisforge;
+    GRANT ALL ON SCHEMA detection TO aegisforge;
+    GRANT ALL ON SCHEMA response TO aegisforge;
+    GRANT ALL ON SCHEMA emulation TO aegisforge;
+    GRANT ALL ON SCHEMA assets TO aegisforge;
+    
+    CREATE TABLE IF NOT EXISTS assets.assets (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name VARCHAR(255) NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        namespace VARCHAR(255),
+        labels JSONB DEFAULT '{}',
+        annotations JSONB DEFAULT '{}',
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        deleted_at TIMESTAMPTZ
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_assets_namespace ON assets.assets(namespace);
+    CREATE INDEX IF NOT EXISTS idx_assets_type ON assets.assets(type);
+    CREATE INDEX IF NOT EXISTS idx_assets_labels ON assets.assets USING GIN(labels);
+    
+    -- Detection rules table
+    CREATE TABLE IF NOT EXISTS detection.rules (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        rule_yaml TEXT NOT NULL,
+        severity VARCHAR(20) NOT NULL,
+        enabled BOOLEAN DEFAULT true,
+        mitre_techniques TEXT[] DEFAULT '{}',
+        tags TEXT[] DEFAULT '{}',
+        version INTEGER DEFAULT 1,
+        created_by VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_detection_rules_enabled ON detection.rules(enabled);
+    CREATE INDEX IF NOT EXISTS idx_detection_rules_severity ON detection.rules(severity);
+    
+    -- Alerts table
+    CREATE TABLE IF NOT EXISTS detection.alerts (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        rule_id UUID REFERENCES detection.rules(id),
+        event_id VARCHAR(255) NOT NULL,
+        event_type VARCHAR(100) NOT NULL,
+        severity VARCHAR(20) NOT NULL,
+        confidence DECIMAL(3,2) NOT NULL,
+        title VARCHAR(500) NOT NULL,
+        description TEXT,
+        evidence JSONB DEFAULT '{}',
+        affected_asset_id UUID REFERENCES assets.assets(id),
+        mitre_techniques TEXT[] DEFAULT '{}',
+        status VARCHAR(20) DEFAULT 'open',
+        assignee VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        closed_at TIMESTAMPTZ
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_detection_alerts_status ON detection.alerts(status);
+    CREATE INDEX IF NOT EXISTS idx_detection_alerts_severity ON detection.alerts(severity);
+    CREATE INDEX IF NOT EXISTS idx_detection_alerts_created_at ON detection.alerts(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_detection_alerts_rule_id ON detection.alerts(rule_id);
+    
+    -- Incidents table
+    CREATE TABLE IF NOT EXISTS detection.incidents (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        title VARCHAR(500) NOT NULL,
+        description TEXT,
+        severity VARCHAR(20) NOT NULL,
+        status VARCHAR(20) DEFAULT 'open',
+        phase VARCHAR(20) DEFAULT 'detection',
+        alert_ids UUID[] DEFAULT '{}',
+        alert_count INTEGER DEFAULT 0,
+        affected_asset_ids UUID[] DEFAULT '{}',
+        affected_namespaces TEXT[] DEFAULT '{}',
+        affected_pods TEXT[] DEFAULT '{}',
+        affected_nodes TEXT[] DEFAULT '{}',
+        affected_services TEXT[] DEFAULT '{}',
+        commander VARCHAR(255),
+        assignees TEXT[] DEFAULT '{}',
+        team VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        detected_at TIMESTAMPTZ,
+        contained_at TIMESTAMPTZ,
+        resolved_at TIMESTAMPTZ,
+        closed_at TIMESTAMPTZ,
+        mttr_seconds INTEGER,
+        mttr_detection_seconds INTEGER,
+        mttr_containment_seconds INTEGER,
+        evidence_ids UUID[] DEFAULT '{}',
+        evidence_count INTEGER DEFAULT 0,
+        response_action_ids UUID[] DEFAULT '{}',
+        response_actions_count INTEGER DEFAULT 0,
+        successful_actions INTEGER DEFAULT 0,
+        failed_actions INTEGER DEFAULT 0,
+        ai_summary TEXT,
+        ai_root_cause TEXT,
+        ai_impact_assessment TEXT,
+        ai_lessons_learned TEXT,
+        report_generated BOOLEAN DEFAULT false,
+        report_url TEXT,
+        report_generated_at TIMESTAMPTZ,
+        closure_reason TEXT,
+        lessons_learned TEXT,
+        preventive_measures TEXT[] DEFAULT '{}',
+        tags TEXT[] DEFAULT '{}',
+        labels JSONB DEFAULT '{}'
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_detection_incidents_status ON detection.incidents(status);
+    CREATE INDEX IF NOT EXISTS idx_detection_incidents_severity ON detection.incidents(severity);
+    CREATE INDEX IF NOT EXISTS idx_detection_incidents_created_at ON detection.incidents(created_at DESC);
+    
+    -- Cases table
+    CREATE TABLE IF NOT EXISTS detection.cases (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        incident_id UUID REFERENCES detection.incidents(id),
+        title VARCHAR(500) NOT NULL,
+        description TEXT,
+        status VARCHAR(20) DEFAULT 'open',
+        owner VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        closed_at TIMESTAMPTZ
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_detection_cases_incident_id ON detection.cases(incident_id);
+    CREATE INDEX IF NOT EXISTS idx_detection_cases_status ON detection.cases(status);
+    
+    -- Evidence table
+    CREATE TABLE IF NOT EXISTS detection.evidence (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        incident_id UUID REFERENCES detection.incidents(id),
+        alert_id UUID REFERENCES detection.alerts(id),
+        type VARCHAR(50) NOT NULL,
+        source VARCHAR(255) NOT NULL,
+        minio_bucket VARCHAR(255),
+        minio_object VARCHAR(500),
+        hash_sha256 VARCHAR(64),
+        size_bytes BIGINT,
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_detection_evidence_incident_id ON detection.evidence(incident_id);
+    CREATE INDEX IF NOT EXISTS idx_detection_evidence_alert_id ON detection.evidence(alert_id);
+    
+    -- Timeline events
+    CREATE TABLE IF NOT EXISTS detection.timeline_events (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        incident_id UUID REFERENCES detection.incidents(id),
+        event_time TIMESTAMPTZ NOT NULL,
+        event_type VARCHAR(100) NOT NULL,
+        title VARCHAR(500) NOT NULL,
+        description TEXT,
+        actor VARCHAR(255),
+        phase VARCHAR(50),
+        data JSONB DEFAULT '{}',
+        source VARCHAR(100),
+        is_milestone BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_detection_timeline_incident_id ON detection.timeline_events(incident_id);
+    CREATE INDEX IF NOT EXISTS idx_detection_timeline_event_time ON detection.timeline_events(event_time);
+    
+    -- Response actions
+    CREATE TABLE IF NOT EXISTS response.actions (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        incident_id UUID REFERENCES detection.incidents(id),
+        alert_id UUID REFERENCES detection.alerts(id),
+        action_type VARCHAR(50) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        dry_run BOOLEAN DEFAULT true,
+        require_approval BOOLEAN DEFAULT true,
+        allowlist_check BOOLEAN DEFAULT true,
+        requested_by VARCHAR(255) NOT NULL,
+        requested_at TIMESTAMPTZ DEFAULT NOW(),
+        approved_by VARCHAR(255),
+        approved_at TIMESTAMPTZ,
+        target_resource JSONB NOT NULL,
+        parameters JSONB DEFAULT '{}',
+        dry_run_result JSONB,
+        execution_result JSONB,
+        execution_error TEXT,
+        rollback_plan JSONB DEFAULT '{}',
+        rollback_result JSONB,
+        rolled_back_at TIMESTAMPTZ,
+        rolled_back_by VARCHAR(255),
+        rollback_reason TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ,
+        timeout_seconds INTEGER DEFAULT 300,
+        retry_count INTEGER DEFAULT 0,
+        max_retries INTEGER DEFAULT 3,
+        circuit_breaker_tripped BOOLEAN DEFAULT false,
+        namespace VARCHAR(255) DEFAULT 'aegisforge-lab',
+        allowed_namespaces TEXT[] DEFAULT '{"aegisforge-lab"}',
+        audit_log_id VARCHAR(255)
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_response_actions_incident_id ON response.actions(incident_id);
+    CREATE INDEX IF NOT EXISTS idx_response_actions_status ON response.actions(status);
+    
+    -- Approvals table
+    CREATE TABLE IF NOT EXISTS response.approvals (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        action_id UUID REFERENCES response.actions(id),
+        requester VARCHAR(255) NOT NULL,
+        requested_at TIMESTAMPTZ DEFAULT NOW(),
+        action_type VARCHAR(50) NOT NULL,
+        target_resource JSONB NOT NULL,
+        dry_run_result JSONB,
+        rollback_plan JSONB DEFAULT '{}',
+        status VARCHAR(20) DEFAULT 'pending',
+        approver VARCHAR(255),
+        decided_at TIMESTAMPTZ,
+        decision_reason TEXT,
+        expires_at TIMESTAMPTZ,
+        expired BOOLEAN DEFAULT false,
+        notified_approvers TEXT[] DEFAULT '{}',
+        notification_sent_at TIMESTAMPTZ,
+        audit_log_id VARCHAR(255)
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_response_approvals_action_id ON response.approvals(action_id);
+    CREATE INDEX IF NOT EXISTS idx_response_approvals_status ON response.approvals(status);
+    
+    -- Emulation scenarios
+    CREATE TABLE IF NOT EXISTS emulation.scenarios (
+        id VARCHAR(100) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        version VARCHAR(50),
+        mitre_techniques TEXT[] DEFAULT '{}',
+        mitre_tactics TEXT[] DEFAULT '{}',
+        severity VARCHAR(20) DEFAULT 'medium',
+        duration_seconds INTEGER DEFAULT 300,
+        config JSONB DEFAULT '{}',
+        simulators TEXT[] DEFAULT '{}',
+        namespace VARCHAR(255) DEFAULT 'aegisforge-lab',
+        allowed_namespaces TEXT[] DEFAULT '{"aegisforge-lab"}',
+        require_approval BOOLEAN DEFAULT true,
+        max_concurrent_runs INTEGER DEFAULT 3,
+        created_by VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        tags TEXT[] DEFAULT '{}',
+        enabled BOOLEAN DEFAULT true
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_emulation_scenarios_enabled ON emulation.scenarios(enabled);
+    
+    -- Emulation runs
+    CREATE TABLE IF NOT EXISTS emulation.runs (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        scenario_id VARCHAR(100) REFERENCES emulation.scenarios(scenario_id),
+        status VARCHAR(20) DEFAULT 'pending',
+        started_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ,
+        duration_seconds INTEGER,
+        config_override JSONB DEFAULT '{}',
+        target_namespace VARCHAR(255) DEFAULT 'aegisforge-lab',
+        events_generated INTEGER DEFAULT 0,
+        events_sent INTEGER DEFAULT 0,
+        events_failed INTEGER DEFAULT 0,
+        errors JSONB DEFAULT '[]',
+        last_error TEXT,
+        status_message TEXT,
+        progress_percent REAL DEFAULT 0.0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        started_by VARCHAR(255)
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_emulation_runs_status ON emulation.runs(status);
+    CREATE INDEX IF NOT EXISTS idx_emulation_runs_scenario_id ON emulation.runs(scenario_id);
+    
+    -- AI knowledge base
+    CREATE TABLE IF NOT EXISTS assets.knowledge_base (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        title VARCHAR(500) NOT NULL,
+        content TEXT NOT NULL,
+        source_type VARCHAR(50) NOT NULL,
+        source_id VARCHAR(255),
+        tags TEXT[] DEFAULT '{}',
+        embedding_id VARCHAR(255),
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_knowledge_base_source_type ON assets.knowledge_base(source_type);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_base_tags ON assets.knowledge_base USING GIN(tags);
+    
+    -- Policies table
+    CREATE TABLE IF NOT EXISTS assets.policies (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        policy_type VARCHAR(50) NOT NULL,
+        policy_yaml TEXT NOT NULL,
+        namespace VARCHAR(255),
+        enabled BOOLEAN DEFAULT true,
+        created_by VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_policies_enabled ON assets.policies(enabled);
+    CREATE INDEX IF NOT EXISTS idx_policies_type ON assets.policies(policy_type);
+    
+    -- Runbooks table
+    CREATE TABLE IF NOT EXISTS assets.runbooks (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        trigger_conditions JSONB DEFAULT '{}',
+        steps JSONB NOT NULL,
+        severity VARCHAR(20) NOT NULL,
+        mitre_techniques TEXT[] DEFAULT '{}',
+        created_by VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_runbooks_severity ON assets.runbooks(severity);
+    
+    -- Grant all privileges on all tables
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA aegisforge TO aegisforge;
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA audit TO aegisforge;
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA detection TO aegisforge;
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA response TO aegisforge;
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA emulation TO aegisforge;
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA assets TO aegisforge;
+    
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA aegisforge TO aegisforge;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA audit TO aegisforge;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA detection TO aegisforge;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA response TO aegisforge;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA emulation TO aegisforge;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA assets TO aegisforge;
+    
+    ALTER DEFAULT PRIVILEGES IN SCHEMA aegisforge GRANT ALL ON TABLES TO aegisforge;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA audit GRANT ALL ON TABLES TO aegisforge;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA detection GRANT ALL ON TABLES TO aegisforge;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA response GRANT ALL ON TABLES TO aegisforge;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA emulation GRANT ALL ON TABLES TO aegisforge;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA assets GRANT ALL ON TABLES TO aegisforge;
+    
+    ALTER DEFAULT PRIVILEGES IN SCHEMA aegisforge GRANT USAGE, SELECT ON SEQUENCES TO aegisforge;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA audit GRANT USAGE, SELECT ON SEQUENCES TO aegisforge;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA detection GRANT USAGE, SELECT ON SEQUENCES TO aegisforge;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA response GRANT USAGE, SELECT ON SEQUENCES TO aegisforge;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA emulation GRANT USAGE, SELECT ON SEQUENCES TO aegisforge;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA assets GRANT USAGE, SELECT ON SEQUENCES TO aegisforge;

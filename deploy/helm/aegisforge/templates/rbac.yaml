@@ -1,0 +1,247 @@
+{{- if .Values.global.rbacEnabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-api-gateway
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-detection-engine
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-response-orchestrator
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-ai-copilot
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-emulation-controller
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-analyst-console
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-detection-engine
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-target-api
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-emulation-controller
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+---
+# API Gateway RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-api-gateway
+  namespace: {{ include "aegisforge.namespace" . }}
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch", "patch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-api-gateway
+  namespace: {{ include "aegisforge.namespace" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "aegisforge.fullname" . }}-api-gateway
+  namespace: {{ include "aegisforge.namespace" . }}
+roleRef:
+  kind: Role
+  name: {{ include "aegisforge.fullname" . }}-api-gateway
+  apiGroup: rbac.authorization.k8s.io
+---
+# Detection Engine RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-detection-engine
+  namespace: {{ include "aegisforge.namespace" . }}
+rules:
+- apiGroups: [""]
+  resources: ["pods", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-detection-engine
+  namespace: {{ include "aegisforge.namespace" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "aegisforge.fullname" . }}-detection-engine
+  namespace: {{ include "aegisforge.namespace" . }}
+roleRef:
+  kind: Role
+  name: {{ include "aegisforge.fullname" . }}-detection-engine
+  apiGroup: rbac.authorization.k8s.io
+---
+# Response Orchestrator RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-response-orchestrator
+  namespace: {{ include "aegisforge.namespace" . }}
+rules:
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["create", "get", "list", "watch", "delete", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch", "patch"]
+- apiGroups: [""]
+  resources: ["pods", "serviceaccounts", "rolebindings"]
+  verbs: ["get", "list", "watch", "delete", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-response-orchestrator
+  namespace: {{ include "aegisforge.namespace" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "aegisforge.fullname" . }}-response-orchestrator
+  namespace: {{ include "aegisforge.namespace" . }}
+roleRef:
+  kind: Role
+  name: {{ include "aegisforge.fullname" . }}-response-orchestrator
+  apiGroup: rbac.authorization.k8s.io
+---
+# AI Copilot RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-ai-copilot
+  namespace: {{ include "aegisforge.namespace" . }}
+rules:
+- apiGroups: [""]
+  resources: ["pods", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-ai-copilot
+  namespace: {{ include "aegisforge.namespace" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "aegisforge.fullname" . }}-ai-copilot
+  namespace: {{ include "aegisforge.namespace" . }}
+roleRef:
+  kind: Role
+  name: {{ include "aegisforge.fullname" . }}-ai-copilot
+  apiGroup: rbac.authorization.k8s.io
+---
+# Emulation Controller RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-emulation-controller
+  namespace: {{ include "aegisforge.namespace" . }}
+rules:
+- apiGroups: [""]
+  resources: ["pods", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch", "create", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-emulation-controller
+  namespace: {{ include "aegisforge.namespace" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "aegisforge.fullname" . }}-emulation-controller
+  namespace: {{ include "aegisforge.namespace" . }}
+roleRef:
+  kind: Role
+  name: {{ include "aegisforge.fullname" . }}-emulation-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+# Analyst Console RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-analyst-console
+  namespace: {{ include "aegisforge.namespace" . }}
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-analyst-console
+  namespace: {{ include "aegisforge.namespace" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "aegisforge.fullname" . }}-analyst-console
+  namespace: {{ include "aegisforge.namespace" . }}
+roleRef:
+  kind: Role
+  name: {{ include "aegisforge.fullname" . }}-analyst-console
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

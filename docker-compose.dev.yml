@@ -1,0 +1,825 @@
+version: '3.8'
+
+# AegisForge Local Development Stack
+# CPU-only, no external dependencies, fully self-contained
+
+services:
+  # ============================================================
+  # INFRASTRUCTURE
+  # ============================================================
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: aegisforge-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aegisforge}
+      POSTGRES_USER: ${POSTGRES_USER:-aegisforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_dev_only}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aegisforge} -d ${POSTGRES_DB:-aegisforge}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v23.3.10
+    container_name: aegisforge-redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=PLAINTEXT://redpanda:8082
+      - --schema-registry-addr=0.0.0.0:8081
+      - --advertise-schema-registry-addr=PLAINTEXT://redpanda:8081
+      - --developer-mode=true
+      - --smp=2
+      - --memory=1G
+      - --default-topic-replications=1
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    ports:
+      - "9092:9092"
+      - "8081:8081"
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health --timeout 5s"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  qdrant:
+    image: qdrant/qdrant:v1.8.0
+    container_name: aegisforge-qdrant
+    volumes:
+      - qdrant-data:/qdrant/storage
+      - ./config/qdrant.yaml:/qdrant/config/production.yaml:ro
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-26Z
+    container_name: aegisforge-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  ollama:
+    image: ollama/ollama:0.1.42
+    container_name: aegisforge-ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    environment:
+      OLLAMA_HOST: 0.0.0.0
+      OLLAMA_NUM_PARALLEL: 2
+      OLLAMA_MAX_LOADED_MODELS: 2
+      OLLAMA_FLASH_ATTENTION: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+  # ============================================================
+  # OBSERVABILITY
+  # ============================================================
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: aegisforge-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: aegisforge-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deploy/alerts:/etc/grafana/provisioning/alerting:ro
+      - ./config/grafana.ini:/etc/grafana/grafana.ini:ro
+    ports:
+      - "3001:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aegisforge-network
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: aegisforge-loki
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./config/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: aegisforge-promtail
+    volumes:
+      - ./config/promtail-config.yaml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - loki-data:/tmp/loki:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - aegisforge-network
+    depends_on:
+      - loki
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.95.0
+    container_name: aegisforge-otel
+    command: --config=/etc/otel-collector-config.yaml
+    volumes:
+      - ./config/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+      - "8888:8888"  # Prometheus metrics
+    networks:
+      - aegisforge-network
+    depends_on:
+      - prometheus
+      - loki
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # ============================================================
+  # FALCO (Runtime Security)
+  # ============================================================
+
+  falco:
+    image: falcosecurity/falco:0.36.0
+    container_name: aegisforge-falco
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock:ro
+      - /dev:/host/dev:ro
+      - /proc:/host/proc:ro
+      - /boot:/host/boot:ro
+      - /lib/modules:/host/lib/modules:ro
+      - /usr:/host/usr:ro
+      - ./config/falco-rules.yaml:/etc/falco/falco_rules.local.yaml:ro
+      - ./config/falco-config.yaml:/etc/falco/falco.yaml:ro
+    environment:
+      FALCO_GRPC_ENABLED: "true"
+      FALCO_GRPC_BIND_ADDRESS: "0.0.0.0:5060"
+      FALCO_WEBSOCKET_ENABLED: "true"
+      FALCO_WEBSOCKET_BIND_ADDRESS: "0.0.0.0:8765"
+    ports:
+      - "5060:5060"
+      - "8765:8765"
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # ============================================================
+  # CORE SERVICES
+  # ============================================================
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+      target: development
+    container_name: aegisforge-api-gateway
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-aegisforge}
+      - POSTGRES_USER=${POSTGRES_USER:-aegisforge}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_dev_only}
+      - REDPANDA_BROKERS=redpanda:9092
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-change-in-production}
+      - JWT_ALGORITHM=HS256
+      - JWT_EXPIRY_MINUTES=60
+      - OIDC_ISSUER_URL=${OIDC_ISSUER_URL:-}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=api-gateway
+    volumes:
+      - ./services/api-gateway:/app:ro
+      - ./packages:/packages:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  detection-engine:
+    build:
+      context: ./services/detection-engine
+      dockerfile: Dockerfile
+      target: development
+    container_name: aegisforge-detection-engine
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - REDPANDA_BROKERS=redpanda:9092
+      - REDPANDA_TOPIC_EVENTS=security-events
+      - REDPANDA_TOPIC_ALERTS=security-alerts
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-aegisforge}
+      - POSTGRES_USER=${POSTGRES_USER:-aegisforge}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_dev_only}
+      - DETECTION_RULES_PATH=/etc/aegisforge/rules
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=detection-engine
+    volumes:
+      - ./services/detection-engine:/app:ro
+      - ./packages:/packages:ro
+      - ./config/rules:/etc/aegisforge/rules:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  response-orchestrator:
+    build:
+      context: ./services/response-orchestrator
+      dockerfile: Dockerfile
+      target: development
+    container_name: aegisforge-response-orchestrator
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-aegisforge}
+      - POSTGRES_USER=${POSTGRES_USER:-aegisforge}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_dev_only}
+      - REDPANDA_BROKERS=redpanda:9092
+      - REDPANDA_TOPIC_ALERTS=security-alerts
+      - REDPANDA_TOPIC_INCIDENTS=security-incidents
+      - REDPANDA_TOPIC_AUDIT=audit-logs
+      - RESPONSE_NAMESPACE=${RESPONSE_NAMESPACE:-aegisforge-lab}
+      - RESPONSE_DRY_RUN=true
+      - RESPONSE_REQUIRE_APPROVAL=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=response-orchestrator
+    volumes:
+      - ./services/response-orchestrator:/app:ro
+      - ./packages:/packages:ro
+      - ./config/allowlist.yaml:/etc/aegisforge/allowlist.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  ai-copilot:
+    build:
+      context: ./services/ai-copilot
+      dockerfile: Dockerfile
+      target: development
+    container_name: aegisforge-ai-copilot
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:1b}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_COLLECTION=security-knowledge
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-aegisforge}
+      - POSTGRES_USER=${POSTGRES_USER:-aegisforge}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_dev_only}
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - AI_REDACT_SECRETS=true
+      - AI_REDACT_PII=true
+      - AI_REDACT_IPS=true
+      - AI_REDACT_TOKENS=true
+      - AI_MAX_TOKENS=2048
+      - AI_TEMPERATURE=0.1
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=ai-copilot
+    volumes:
+      - ./services/ai-copilot:/app:ro
+      - ./packages:/packages:ro
+    ports:
+      - "8003:8003"
+    depends_on:
+      ollama:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+  emulation-controller:
+    build:
+      context: ./services/emulation-controller
+      dockerfile: Dockerfile
+      target: development
+    container_name: aegisforge-emulation-controller
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - EMULATION_NAMESPACE=${EMULATION_NAMESPACE:-aegisforge-lab}
+      - EMULATION_REQUIRE_APPROVAL=true
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-aegisforge}
+      - POSTGRES_USER=${POSTGRES_USER:-aegisforge}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_dev_only}
+      - REDPANDA_BROKERS=redpanda:9092
+      - REDPANDA_TOPIC_EVENTS=security-events
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=emulation-controller
+    volumes:
+      - ./services/emulation-controller:/app:ro
+      - ./packages:/packages:ro
+      - ./config/scenarios:/etc/aegisforge/scenarios:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ============================================================
+  # SIMULATORS
+  # ============================================================
+
+  target-api:
+    build:
+      context: ./simulators/target-api
+      dockerfile: Dockerfile
+      target: development
+    container_name: aegisforge-target-api
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - TARGET_API_PORT=8080
+      - REDPANDA_BROKERS=redpanda:9092
+      - REDPANDA_TOPIC_EVENTS=security-events
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=target-api
+    ports:
+      - "8080:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  auth-simulator:
+    build:
+      context: ./simulators/auth-simulator
+      dockerfile: Dockerfile
+      target: development
+    container_name: aegisforge-auth-simulator
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - SIMULATOR_INTERVAL=30s
+      - SIMULATOR_BATCH_SIZE=10
+      - REDPANDA_BROKERS=redpanda:9092
+      - REDPANDA_TOPIC_EVENTS=security-events
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=auth-simulator
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  workload-simulator:
+    build:
+      context: ./simulators/workload-simulator
+      dockerfile: Dockerfile
+      target: development
+    container_name: aegisforge-workload-simulator
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - SIMULATOR_INTERVAL=30s
+      - SIMULATOR_BATCH_SIZE=10
+      - REDPANDA_BROKERS=redpanda:9092
+      - REDPANDA_TOPIC_EVENTS=security-events
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=workload-simulator
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  dns-simulator:
+    build:
+      context: ./simulators/dns-simulator
+      dockerfile: Dockerfile
+      target: development
+    container_name: aegisforge-dns-simulator
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - SIMULATOR_INTERVAL=30s
+      - SIMULATOR_BATCH_SIZE=10
+      - REDPANDA_BROKERS=redpanda:9092
+      - REDPANDA_TOPIC_EVENTS=security-events
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=dns-simulator
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  traffic-simulator:
+    build:
+      context: ./simulators/traffic-simulator
+      dockerfile: Dockerfile
+      target: development
+    container_name: aegisforge-traffic-simulator
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - SIMULATOR_INTERVAL=30s
+      - SIMULATOR_BATCH_SIZE=10
+      - REDPANDA_BROKERS=redpanda:9092
+      - REDPANDA_TOPIC_EVENTS=security-events
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=traffic-simulator
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  # ============================================================
+  # ANALYST CONSOLE
+  # ============================================================
+
+  analyst-console:
+    build:
+      context: ./web/analyst-console
+      dockerfile: Dockerfile
+      target: development
+    container_name: aegisforge-analyst-console
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_WS_URL=ws://localhost:8000/ws
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./web/analyst-console:/app
+      - /app/node_modules
+    depends_on:
+      - api-gateway
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # ============================================================
+  # KEYCLOAK (Optional - comment out if not needed)
+  # ============================================================
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: aegisforge-keycloak
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
+    volumes:
+      - ./config/keycloak-realm.json:/opt/keycloak/data/import/realm.json:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ============================================================
+  # REDIS (for caching/sessions)
+  # ============================================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: aegisforge-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aegisforge-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+# ============================================================
+# VOLUMES
+# ============================================================
+
+volumes:
+  postgres-data:
+  redpanda-data:
+  qdrant-data:
+  minio-data:
+  ollama-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  redis-data:
+
+# ============================================================
+# NETWORKS
+# ============================================================
+
+networks:
+  aegisforge-network:
+    driver: bridge
+    name: aegisforge-network

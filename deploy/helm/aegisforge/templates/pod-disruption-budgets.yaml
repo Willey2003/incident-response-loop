@@ -1,0 +1,114 @@
+{{- if .Values.podDisruptionBudgets.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-api-gateway-pdb
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudgets.minAvailable.apiGateway }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-detection-engine-pdb
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudgets.minAvailable.detectionEngine }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: detection-engine
+      app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-ai-copilot-pdb
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudgets.minAvailable.aiCopilot }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-copilot
+      app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-emulation-controller-pdb
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudgets.minAvailable.emulationController }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: emulation-controller
+      app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-target-api-pdb
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudgets.minAvailable.targetApi }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: target-api
+      app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-analyst-console-pdb
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudgets.minAvailable.analystConsole }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: analyst-console
+      app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-threat-contextualizer-pdb
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudgets.minAvailable.threatContextualizer }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: threat-contextualizer
+      app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-reconciler-engine-pdb
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudgets.minAvailable.reconcilerEngine }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: reconciler-engine
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

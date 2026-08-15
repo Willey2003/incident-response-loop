@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-ollama
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/component: ai-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ollama
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: ai-inference
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "11434"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: ollama
+        image: "{{ .Values.global.imageRegistry }}/ollama/ollama:{{ .Values.ollama.version | default "0.1.42" }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - name: http
+          containerPort: 11434
+          protocol: TCP
+        - name: metrics
+          containerPort: 11434
+          protocol: TCP
+        env:
+        - name: OLLAMA_HOST
+          value: "0.0.0.0"
+        - name: OLLAMA_NUM_PARALLEL
+          value: "{{ .Values.global.ai.ollama.numParallel | default "2" }}"
+        - name: OLLAMA_MAX_LOADED_MODELS
+          value: "{{ .Values.global.ai.ollama.maxLoadedModels | default "2" }}"
+        - name: OLLAMA_FLASH_ATTENTION
+          value: "{{ .Values.global.ai.ollama.flashAttention | default "true" }}"
+        - name: OLLAMA_NUM_THREAD
+          value: "{{ .Values.global.ai.ollama.numThread | default "4" }}"
+        - name: OLLAMA_NUM_CTX
+          value: "{{ .Values.global.ai.ollama.numCtx | default "4096" }}"
+        - name: OLLAMA_KV_CACHE_TYPE
+          value: "{{ .Values.global.ai.ollama.kvCacheType | default "fp16" }}"
+        - name: OLLAMA_MODELS
+          value: "{{ .Values.global.ai.ollama.model | default "llama3.2:1b" }},{{ .Values.global.ai.ollama.embeddingModel | default "all-MiniLM-L6-v2" }}"
+        resources:
+          {{- toYaml .Values.global.ai.ollama.resources | nindent 10 }}
+        volumeMounts:
+        - name: ollama-data
+          mountPath: /root/.ollama
+        - name: models
+          mountPath: /models
+        livenessProbe:
+          httpGet:
+            path: /api/tags
+            port: 11434
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/tags
+            port: 11434
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - name: ollama-data
+          mountPath: /root/.ollama
+        - name: models
+          mountPath: /models
+      volumes:
+      - name: ollama-data
+        emptyDir: {}
+      - name: models
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-ollama
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: ollama
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 11434
+    targetPort: 11434
+    protocol: TCP
+  - name: metrics
+    port: 11434
+    targetPort: 11434
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/instance: {{ .Release.Name }}

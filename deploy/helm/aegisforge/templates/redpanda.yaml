@@ -1,0 +1,183 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-redpanda
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: redpanda
+    app.kubernetes.io/component: event-backbone
+spec:
+  serviceName: {{ include "aegisforge.fullname" . }}-redpanda
+  replicas: {{ .Values.redpanda.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redpanda
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redpanda
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: event-backbone
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9644"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: redpanda
+        image: "{{ .Values.global.imageRegistry }}/docker.redpanda.com/redpandadata/redpanda:{{ .Values.redpanda.version | default "v23.3.10" }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        command:
+        - redpanda
+        - start
+        - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+        - --advertise-kafka-addr=PLAINTEXT://$(POD_NAME).{{ include "aegisforge.fullname" . }}-redpanda.{{ include "aegisforge.namespace" . }}.svc.cluster.local:9092
+        - --pandaproxy-addr=0.0.0.0:8082
+        - --advertise-pandaproxy-addr=PLAINTEXT://$(POD_NAME).{{ include "aegisforge.fullname" . }}-redpanda.{{ include "aegisforge.namespace" . }}.svc.cluster.local:8082
+        - --schema-registry-addr=0.0.0.0:8081
+        - --advertise-schema-registry-addr=PLAINTEXT://$(POD_NAME).{{ include "aegisforge.fullname" . }}-redpanda.{{ include "aegisforge.namespace" . }}.svc.cluster.local:8081
+        - --developer-mode=true
+        - --smp=2
+        - --memory=1G
+        - --default-topic-replications=1
+        - --enable-transactions=true
+        - --enable-idempotence=true
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - name: kafka
+          containerPort: 9092
+          protocol: TCP
+        - name: pandaproxy
+          containerPort: 8082
+          protocol: TCP
+        - name: schema-registry
+          containerPort: 8081
+          protocol: TCP
+        - name: metrics
+          containerPort: 9644
+          protocol: TCP
+        resources:
+          {{- toYaml .Values.redpanda.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/redpanda/data
+        livenessProbe:
+          exec:
+            command:
+            - rpk
+            - cluster
+            - health
+            - --timeout
+            - 5s
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - rpk
+            - cluster
+            - health
+            - --timeout
+            - 5s
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-redpanda
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: redpanda
+spec:
+  type: ClusterIP
+  ports:
+  - name: kafka
+    port: 9092
+    targetPort: 9092
+    protocol: TCP
+  - name: pandaproxy
+    port: 8082
+    targetPort: 8082
+    protocol: TCP
+  - name: schema-registry
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
+  - name: metrics
+    port: 9644
+    targetPort: 9644
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: redpanda
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  clusterIP: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-redpanda-external
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: redpanda
+spec:
+  type: ClusterIP
+  ports:
+  - name: kafka
+    port: 9092
+    targetPort: 9092
+    protocol: TCP
+  - name: pandaproxy
+    port: 8082
+    targetPort: 8082
+    protocol: TCP
+  - name: schema-registry
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: redpanda
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-redpanda-config
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  redpanda.yaml: |
+    kafka:
+      enable_transactions: true
+      enable_idempotence: true
+      max_batch_size: 1048576
+      default_topic_partitions: 1
+      default_topic_replications: 1
+    pandaproxy:
+      enable: true
+    schema_registry:
+      enable: true
+    developer_mode: true
+    smp: 2
+    memory: 1G

@@ -1,0 +1,1247 @@
+# AegisForge .gitignore
+# ============================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+pytestdebug.log
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.env.local
+.env.*.local
+.env.*.secret
+.secrets/
+
+# Virtual environments
+.venv
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+*.whl
+*.tar.gz
+
+# Docker
+.docker/
+docker-compose.override.yml
+*.dockerfile.bak
+
+# Kubernetes
+*.kubeconfig
+kubeconfig
+*.kubeconfig.*
+.kube/
+
+# Helm
+*.tgz
+charts/
+.helm/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform/
+*.tfplan
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# Coverage
+coverage.xml
+coverage.json
+.coverage
+
+# Test results
+test-results/
+junit.xml
+test-results.xml
+
+# Profiling
+*.prof
+*.pprof
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor
+*.sublime-workspace
+*.sublime-project
+*.code-workspace
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+temp/
+
+# Secrets (never commit!)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.cer
+*.der
+*.p7b
+*.p7c
+*.pfx
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+*.ovpn
+*.gpg
+*.asc
+
+# MinIO / S3
+.minio/
+
+# Ollama models
+.ollama/
+
+# Qdrant
+.qdrant/
+
+# Redis dump
+dump.rdb
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Vite
+dist/
+dist-ssr/
+*.local
+
+# TypeScript
+*.tsbuildinfo
+
+# Go
+*.exe
+*.test
+*.out
+*.prof
+go.work
+
+# Cargo
+Cargo.lock
+target/
+
+# Java
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Helm
+*.tgz
+charts/
+
+# Kustomize
+kustomization.yaml.bak
+
+# ArgoCD
+.argocd/
+
+# Flux
+.flux/
+
+# Sealed Secrets
+*.sealedsecret.yaml
+
+# SOPS
+.sops.yaml
+*.sops.yaml
+
+# Age
+*.age
+
+# Cosign
+*.sig
+*.sig.b64
+
+# SBOM
+sbom-*.spdx.json
+sbom-*.cdx.json
+
+# Trivy
+trivy-*.json
+trivy-*.sarif
+
+# Semgrep
+semgrep-*.json
+semgrep-*.sarif
+
+# Bandit
+bandit-*.json
+
+# Hadolint
+hadolint-*.json
+
+# KubeLinter
+kube-linter-*.json
+
+# Kubeval
+kubeval-*.json
+
+# Kube-score
+kube-score-*.json
+
+# Kubescape
+kubescape-*.json
+
+# Polaris
+polaris-*.json
+
+# Kube-hunter
+kube-hunter-*.json
+
+# Kube-bench
+kube-bench-*.json
+
+# Falco
+falco-*.json
+
+# Sysdig
+sysdig-*.json
+
+# Tracee
+tracee-*.json
+
+# eBPF
+*.btf
+
+# Perf
+perf.data
+perf.data.old
+
+# BPFtrace
+*.bt
+
+# DTrace
+*.d
+
+# SystemTap
+*.stp
+
+# Perfetto
+*.perfetto
+*.proto
+
+# Jaeger
+jaeger-*.json
+
+# Zipkin
+zipkin-*.json
+
+# OpenTelemetry
+otel-*.json
+
+# Prometheus
+prometheus-*.json
+
+# Grafana
+grafana-*.json
+
+# Loki
+loki-*.json
+
+# Tempo
+tempo-*.json
+
+# Mimir
+mimir-*.json
+
+# Thanos
+thanos-*.json
+
+# Cortex
+cortex-*.json
+
+# VictoriaMetrics
+victoriametrics-*.json
+
+# InfluxDB
+influxdb-*.json
+
+# TimescaleDB
+timescaledb-*.json
+
+# QuestDB
+questdb-*.json
+
+# ClickHouse
+clickhouse-*.json
+
+# Apache Kafka
+kafka-*.json
+
+# Redpanda
+redpanda-*.json
+
+# Pulsar
+pulsar-*.json
+
+# NATS
+nats-*.json
+
+# RabbitMQ
+rabbitmq-*.json
+
+# PostgreSQL
+postgresql-*.json
+
+# MySQL
+mysql-*.json
+
+# MongoDB
+mongodb-*.json
+
+# Redis
+redis-*.json
+
+# Elasticsearch
+elasticsearch-*.json
+
+# OpenSearch
+opensearch-*.json
+
+# Cassandra
+cassandra-*.json
+
+# ScyllaDB
+scylladb-*.json
+
+# CockroachDB
+cockroachdb-*.json
+
+# TiDB
+tidb-*.json
+
+# YugabyteDB
+yugabytedb-*.json
+
+# Etcd
+etcd-*.json
+
+# Consul
+consul-*.json
+
+# Vault
+vault-*.json
+
+# Nomad
+nomad-*.json
+
+# Kubernetes
+kubernetes-*.json
+
+# Docker
+docker-*.json
+
+# Containerd
+containerd-*.json
+
+# CRI-O
+crio-*.json
+
+# Podman
+podman-*.json
+
+# BuildKit
+buildkit-*.json
+
+# Kaniko
+kaniko-*.json
+
+# Buildah
+buildah-*.json
+
+# Podman
+podman-*.json
+
+# Skopeo
+skopeo-*.json
+
+# Crane
+crane-*.json
+
+# ORAS
+oras-*.json
+
+# Cosign
+cosign-*.json
+
+# Sigstore
+sigstore-*.json
+
+# Rekor
+rekor-*.json
+
+# Fulcio
+fulcio-*.json
+
+# CT log
+ctlog-*.json
+
+# TUF
+tuf-*.json
+
+# In-toto
+intoto-*.json
+
+# SLSA
+slsa-*.json
+
+# SPDX
+spdx-*.json
+
+# CycloneDX
+cyclonedx-*.json
+
+# SWID
+swid-*.json
+
+# Package URL
+purl-*.json
+
+# SBOM
+sbom-*.json
+
+# VEX
+vex-*.json
+
+# CSAF
+csaf-*.json
+
+# VDR
+vdr-*.json
+
+# OSV
+osv-*.json
+
+# CVE
+cve-*.json
+
+# NVD
+nvd-*.json
+
+# GHSA
+ghsa-*.json
+
+# MITRE
+mitre-*.json
+
+# ATT&CK
+attack-*.json
+
+# CAPEC
+capec-*.json
+
+# CWE
+cwe-*.json
+
+# OWASP
+owasp-*.json
+
+# NIST
+nist-*.json
+
+# FIPS
+fips-*.json
+
+# CMMC
+cmmc-*.json
+
+# SOC2
+soc2-*.json
+
+# ISO27001
+iso27001-*.json
+
+# HIPAA
+hipaa-*.json
+
+# GDPR
+gdpr-*.json
+
+# CCPA
+ccpa-*.json
+
+# PCI-DSS
+pci-dss-*.json
+
+# SOX
+sox-*.json
+
+# FISMA
+fisma-*.json
+
+# NERC-CIP
+nerc-cip-*.json
+
+# IEC62443
+iec62443-*.json
+
+# ISA99
+isa99-*.json
+
+# TSA
+tsa-*.json
+
+# DHS
+dhs-*.json
+
+# CISA
+cisa-*.json
+
+# NSA
+nsa-*.json
+
+# GCHQ
+gchq-*.json
+
+# NCSC
+ncsc-*.json
+
+# ANSSI
+anssi-*.json
+
+# BSI
+bsi-*.json
+
+# ENISA
+enisa-*.json
+
+# CERT
+cert-*.json
+
+# US-CERT
+us-cert-*.json
+
+# ICS-CERT
+ics-cert-*.json
+
+# JPCERT
+jpcert-*.json
+
+# KISA
+kisa-*.json
+
+# KR-CERT
+kr-cert-*.json
+
+# CNCERT
+cncert-*.json
+
+# TW-CERT
+tw-cert-*.json
+
+# HK-CERT
+hk-cert-*.json
+
+# SG-CERT
+sg-cert-*.json
+
+# AU-CERT
+au-cert-*.json
+
+# NZ-CERT
+nz-cert-*.json
+
+# CA-CERT
+ca-cert-*.json
+
+# UK-CERT
+uk-cert-*.json
+
+# DE-CERT
+de-cert-*.json
+
+# FR-CERT
+fr-cert-*.json
+
+# NL-CERT
+nl-cert-*.json
+
+# BE-CERT
+be-cert-*.json
+
+# AT-CERT
+at-cert-*.json
+
+# CH-CERT
+ch-cert-*.json
+
+# SE-CERT
+se-cert-*.json
+
+# NO-CERT
+no-cert-*.json
+
+# DK-CERT
+dk-cert-*.json
+
+# FI-CERT
+fi-cert-*.json
+
+# IE-CERT
+ie-cert-*.json
+
+# PT-CERT
+pt-cert-*.json
+
+# ES-CERT
+es-cert-*.json
+
+# IT-CERT
+it-cert-*.json
+
+# GR-CERT
+gr-cert-*.json
+
+# HR-CERT
+hr-cert-*.json
+
+# SI-CERT
+si-cert-*.json
+
+# SK-CERT
+sk-cert-*.json
+
+# CZ-CERT
+cz-cert-*.json
+
+# PL-CERT
+pl-cert-*.json
+
+# HU-CERT
+hu-cert-*.json
+
+# RO-CERT
+ro-cert-*.json
+
+# BG-CERT
+bg-cert-*.json
+
+# RS-CERT
+rs-cert-*.json
+
+# HR-CERT
+hr-cert-*.json
+
+# BA-CERT
+ba-cert-*.json
+
+# ME-CERT
+me-cert-*.json
+
+# MK-CERT
+mk-cert-*.json
+
+# AL-CERT
+al-cert-*.json
+
+# XK-CERT
+xk-cert-*.json
+
+# GE-CERT
+ge-cert-*.json
+
+# AM-CERT
+am-cert-*.json
+
+# AZ-CERT
+az-cert-*.json
+
+# BY-CERT
+by-cert-*.json
+
+# KG-CERT
+kg-cert-*.json
+
+# KZ-CERT
+kz-cert-*.json
+
+# TJ-CERT
+tj-cert-*.json
+
+# TM-CERT
+tm-cert-*.json
+
+# UZ-CERT
+uz-cert-*.json
+
+# MN-CERT
+mn-cert-*.json
+
+# AF-CERT
+af-cert-*.json
+
+# ZA-CERT
+za-cert-*.json
+
+# EG-CERT
+eg-cert-*.json
+
+# MA-CERT
+ma-cert-*.json
+
+# TN-CERT
+tn-cert-*.json
+
+# DZ-CERT
+dz-cert-*.json
+
+# LY-CERT
+ly-cert-*.json
+
+# SD-CERT
+sd-cert-*.json
+
+# SS-CERT
+ss-cert-*.json
+
+# SO-CERT
+so-cert-*.json
+
+# KE-CERT
+ke-cert-*.json
+
+# TZ-CERT
+tz-cert-*.json
+
+# UG-CERT
+ug-cert-*.json
+
+# RW-CERT
+rw-cert-*.json
+
+# BI-CERT
+bi-cert-*.json
+
+# MW-CERT
+mw-cert-*.json
+
+# MZ-CERT
+mz-cert-*.json
+
+# ZW-CERT
+zw-cert-*.json
+
+# NA-CERT
+na-cert-*.json
+
+# BW-CERT
+bw-cert-*.json
+
+# LS-CERT
+ls-cert-*.json
+
+# SZ-CERT
+sz-cert-*.json
+
+# KM-CERT
+km-cert-*.json
+
+# MU-CERT
+mu-cert-*.json
+
+# SC-CERT
+sc-cert-*.json
+
+# ST-CERT
+st-cert-*.json
+
+# VC-CERT
+vc-cert-*.json
+
+# WS-CERT
+ws-cert-*.json
+
+# YT-CERT
+yt-cert-*.json
+
+# RE-CERT
+re-cert-*.json
+
+# MQ-CERT
+mq-cert-*.json
+
+# YT-CERT
+yt-cert-*.json
+
+# PM-CERT
+pm-cert-*.json
+
+# KN-CERT
+kn-cert-*.json
+
+# LC-CERT
+lc-cert-*.json
+
+# VC-CERT
+vc-cert-*.json
+
+# WF-CERT
+wf-cert-*.json
+
+# WS-CERT
+ws-cert-*.json
+
+# NR-CERT
+nr-cert-*.json
+
+# NC-CERT
+nc-cert-*.json
+
+# VU-CERT
+vu-cert-*.json
+
+# TV-CERT
+tv-cert-*.json
+
+# FJ-CERT
+fj-cert-*.json
+
+# SB-CERT
+sb-cert-*.json
+
+# KI-CERT
+ki-cert-*.json
+
+# MH-CERT
+mh-cert-*.json
+
+# NR-CERT
+nr-cert-*.json
+
+# NU-CERT
+nu-cert-*.json
+
+# CK-CERT
+ck-cert-*.json
+
+# PW-CERT
+pw-cert-*.json
+
+# TK-CERT
+tk-cert-*.json
+
+# TO-CERT
+to-cert-*.json
+
+# TV-CERT
+tv-cert-*.json
+
+# VU-CERT
+vu-cert-*.json
+
+# WF-CERT
+wf-cert-*.json
+
+# WS-CERT
+ws-cert-*.json
+
+# NR-CERT
+nr-cert-*.json
+
+# NC-CERT
+nc-cert-*.json
+
+# VU-CERT
+vu-cert-*.json
+
+# TV-CERT
+tv-cert-*.json
+
+# FJ-CERT
+fj-cert-*.json
+
+# SB-CERT
+sb-cert-*.json
+
+# KI-CERT
+ki-cert-*.json
+
+# MH-CERT
+mh-cert-*.json
+
+# NR-CERT
+nr-cert-*.json
+
+# NU-CERT
+nu-cert-*.json
+
+# CK-CERT
+ck-cert-*.json
+
+# PW-CERT
+pw-cert-*.json
+
+# TK-CERT
+tk-cert-*.json
+
+# TO-CERT
+to-cert-*.json
+
+# TV-CERT
+tv-cert-*.json
+
+# VU-CERT
+vu-cert-*.json
+
+# WF-CERT
+wf-cert-*.json
+
+# WS-CERT
+ws-cert-*.json
+
+# NR-CERT
+nr-cert-*.json
+
+# NC-CERT
+nc-cert-*.json
+
+# VU-CERT
+vu-cert-*.json
+
+# TV-CERT
+tv-cert-*.json
+
+# FJ-CERT
+fj-cert-*.json
+
+# SB-CERT
+sb-cert-*.json
+
+# KI-CERT
+ki-cert-*.json
+
+# MH-CERT
+mh-cert-*.json
+
+# NR-CERT
+nr-cert-*.json
+
+# NU-CERT
+nu-cert-*.json
+
+# CK-CERT
+ck-cert-*.json
+
+# PW-CERT
+pw-cert-*.json
+
+# TK-CERT
+tk-cert-*.json
+
+# TO-CERT
+to-cert-*.json
+
+# TV-CERT
+tv-cert-*.json
+
+# VU-CERT
+vu-cert-*.json
+
+# WF-CERT
+wf-cert-*.json
+
+# WS-CERT
+ws-cert-*.json
+
+# NR-CERT
+nr-cert-*.json
+
+# NC-CERT
+nc-cert-*.json
+
+# VU-CERT
+vu-cert-*.json
+
+# TV-CERT
+tv-cert-*.json
+
+# FJ-CERT
+fj-cert-*.json
+
+# SB-CERT
+sb-cert-*.json
+
+# KI-CERT
+ki-cert-*.json
+
+# MH-CERT
+mh-cert-*.json
+
+# NR-CERT
+nr-cert-*.json
+
+# NU-CERT
+nu-cert-*.json
+
+# CK-CERT
+ck-cert-*.json
+
+# PW-CERT
+pw-cert-*.json
+
+# TK-CERT
+tk-cert-*.json
+
+# TO-CERT
+to-cert-*.json
+
+# TV-CERT
+tv-cert-*.json
+
+# VU-CERT
+vu-cert-*.json
+
+# WF-CERT
+wf-cert-*.json
+
+# WS-CERT
+ws-cert-*.json
+
+# NR-CERT
+nr-cert-*.json
+
+# NC-CERT
+nc-cert-*.json
+
+# VU-CERT
+vu-cert-*.json
+
+# TV-CERT
+tv-cert-*.json
+
+# FJ-CERT
+fj-cert-*.json
+
+# SB-CERT
+sb-cert-*.json
+
+# KI-CERT
+ki-cert-*.json
+
+# MH-CERT
+mh-cert-*.json
+
+# NR-CERT
+nr-cert-*.json
+
+# NU-CERT
+nu-cert-*.json
+
+# CK-CERT
+ck-cert-*.json
+
+# PW-CERT
+pw-cert-*.json
+
+# TK-CERT
+tk-cert-*.json
+
+# TO-CERT
+to-cert-*.json
+
+# TV-CERT
+tv-cert-*.json
+
+# VU-CERT
+vu-cert-*.json
+
+# WF-CERT
+wf-cert-*.json
+
+# WS-CERT
+ws-cert-*.json
+
+# NR-CERT
+nr-cert-*.json
+
+# NC-CERT
+nc-cert-*.json
+
+# VU-CERT
+vu-cert-*.json
+
+# TV-CERT
+tv-cert-*.json
+
+# FJ-CERT
+fj-cert-*.json
+
+# SB-CERT
+sb-cert-*.json
+
+# KI-CERT
+ki-cert-*.json
+
+# MH-CERT
+mh-cert-*.json

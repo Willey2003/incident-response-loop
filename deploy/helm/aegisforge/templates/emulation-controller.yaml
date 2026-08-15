@@ -1,0 +1,283 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-emulation-controller
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: emulation-controller
+    app.kubernetes.io/component: emulation-controller
+spec:
+  replicas: {{ .Values.emulationController.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: emulation-controller
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: emulation-controller
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: emulation-controller
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8004"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "aegisforge.fullname" . }}-emulation-controller
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: emulation-controller
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.global.imagePrefix | default "aegisforge" }}/emulation-controller:{{ .Values.global.imageTag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - name: http
+          containerPort: 8004
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: {{ .Values.global.environment | default "production" }}
+        - name: LOG_LEVEL
+          value: {{ .Values.global.logLevel | default "INFO" }}
+        - name: POSTGRES_HOST
+          value: {{ include "aegisforge.fullname" . }}-postgres
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: {{ .Values.global.database.postgresql.dbName | default "aegisforge" }}
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: password
+        - name: EMULATION_NAMESPACE
+          value: {{ .Values.global.emulation.namespace | default "aegisforge-lab" }}
+        - name: EMULATION_REQUIRE_APPROVAL
+          value: "true"
+        - name: REDPANDA_BROKERS
+          value: {{ include "aegisforge.fullname" . }}-redpanda:9092
+        - name: REDPANDA_TOPIC_EVENTS
+          value: security-events
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: {{ .Values.global.observability.otelCollector.endpoint | default "http://otel-collector:4317" }}
+        - name: OTEL_SERVICE_NAME
+          value: emulation-controller
+        resources:
+          {{- toYaml .Values.emulationController.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8004
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8004
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /etc/aegisforge
+          readOnly: true
+        - name: scenarios
+          mountPath: /etc/aegisforge/scenarios
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-emulation-controller-config
+      - name: scenarios
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-emulation-scenarios
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-emulation-controller
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: emulation-controller
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8004
+    targetPort: 8004
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: emulation-controller
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-emulation-controller-config
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    environment: production
+    log_level: info
+    log_format: json
+    emulation_namespace: aegisforge-lab
+    emulation_require_approval: true
+    emulation_max_concurrent: 3
+    emulation_default_duration: 300
+    redpanda_brokers: "{{ include "aegisforge.fullname" . }}-redpanda:9092"
+    redpanda_topic_events: security-events
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-emulation-scenarios
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  auth-brute-force.yaml: |
+    scenario_id: "auth-brute-force"
+    name: "Authentication Brute Force"
+    description: "Simulates repeated failed login attempts from single source"
+    category: "authentication"
+    mitre_techniques: ["T1110.001", "T1110.003"]
+    mitre_tactics: ["TA0006"]
+    severity: "high"
+    duration_seconds: 300
+    config:
+      source_ips: ["10.0.1.100"]
+      target_usernames: ["admin", "root", "test", "user1"]
+      failure_rate: 0.9
+      interval_seconds: 2
+    simulators: ["auth-simulator"]
+    namespace: "aegisforge-lab"
+    require_approval: true
+    max_concurrent_runs: 3
+  dns-tunneling.yaml: |
+    scenario_id: "dns-tunneling"
+    name: "DNS Tunneling Exfiltration"
+    description: "Simulates DNS tunneling for data exfiltration"
+    category: "dns"
+    mitre_techniques: ["T1048.003", "T1572"]
+    mitre_tactics: ["TA0010", "TA0011"]
+    severity: "high"
+    duration_seconds: 300
+    config:
+      domain: "exfil.example.com"
+      subdomain_length: 50
+      entropy: 0.9
+      query_interval_ms: 100
+      payload_size: 200
+    simulators: ["dns-simulator"]
+    namespace: "aegisforge-lab"
+    require_approval: true
+    max_concurrent_runs: 3
+  traffic-beaconing.yaml: |
+    scenario_id: "traffic-beaconing"
+    name: "C2 Beaconing Pattern"
+    description: "Simulates regular C2 beaconing traffic"
+    category: "traffic"
+    mitre_techniques: ["T1071.001", "T1573.001"]
+    mitre_tactics: ["TA0011"]
+    severity: "high"
+    duration_seconds: 300
+    config:
+      destination: "10.0.100.50:443"
+      interval_seconds: 60
+      jitter_percent: 10
+      payload_size: 512
+      protocol: "tcp"
+    simulators: ["traffic-simulator"]
+    namespace: "aegisforge-lab"
+    require_approval: true
+    max_concurrent_runs: 3
+  traffic-port-scan.yaml: |
+    scenario_id: "traffic-port-scan"
+    name: "Internal Port Scan"
+    description: "Simulates internal network reconnaissance"
+    category: "traffic"
+    mitre_techniques: ["T1046", "T1590.005"]
+    mitre_tactics: ["TA0007"]
+    severity: "medium"
+    duration_seconds: 300
+    config:
+      target_subnet: "10.0.0.0/24"
+      ports: [22, 23, 80, 443, 3306, 5432, 6379, 8080, 8443, 9090]
+      scan_type: "syn"
+      rate_pps: 100
+    simulators: ["traffic-simulator"]
+    namespace: "aegisforge-lab"
+    require_approval: true
+    max_concurrent_runs: 3
+  workload-privilege-escalation.yaml: |
+    scenario_id: "workload-privilege-escalation"
+    name: "Container Privilege Escalation"
+    description: "Simulates container escape and privilege escalation attempts"
+    category: "workload"
+    mitre_techniques: ["T1611", "T1610", "T1609"]
+    mitre_tactics: ["TA0004"]
+    severity: "critical"
+    duration_seconds: 300
+    config:
+      techniques: ["privileged_container", "host_path_mount", "docker_socket_mount", "capability_abuse", "kernel_exploit"]
+      interval_seconds: 60
+    simulators: ["workload-simulator"]
+    namespace: "aegisforge-lab"
+    require_approval: true
+    max_concurrent_runs: 3
+  crypto-mining.yaml: |
+    scenario_id: "crypto-mining"
+    name: "Cryptocurrency Mining"
+    description: "Simulates cryptominer process execution"
+    category: "workload"
+    mitre_techniques: ["T1496"]
+    mitre_tactics: ["TA0005"]
+    severity: "high"
+    duration_seconds: 300
+    config:
+      miner_process: "xmrig"
+      pool_address: "pool.minexmr.com:4444"
+      wallet: "4x...x"
+      cpu_threads: 2
+      duration_seconds: 300
+    simulators: ["workload-simulator"]
+    namespace: "aegisforge-lab"
+    require_approval: true
+    max_concurrent_runs: 3
+  data-exfiltration.yaml: |
+    scenario_id: "data-exfiltration"
+    name: "Data Exfiltration Simulation"
+    description: "Simulates large data transfer to external destination"
+    category: "traffic"
+    mitre_techniques: ["T1041", "T1048.003"]
+    mitre_tactics: ["TA0010"]
+    severity: "critical"
+    duration_seconds: 300
+    config:
+      destination: "10.0.100.100:443"
+      data_size_mb: 100
+      chunk_size_kb: 1024
+      interval_ms: 100
+      protocol: "https"
+    simulators: ["traffic-simulator"]
+    namespace: "aegisforge-lab"
+    require_approval: true
+    max_concurrent_runs: 3

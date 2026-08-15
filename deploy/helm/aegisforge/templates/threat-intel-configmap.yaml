@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-threat-intel-data
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  threat_intel.json: |
+    {
+      "version": "1.0",
+      "updated": "2024-01-15T00:00:00Z",
+      "source": "mock",
+      "description": "Mock threat intelligence database for testing",
+      "threat_intelligence": [
+        {
+          "id": "CVE-2021-44228",
+          "type": "cve",
+          "category": "payload",
+          "pattern": "log4j|jndi:ldap|jndi:rmi|\\$\\{jndi:",
+          "pattern_type": "regex",
+          "severity": "critical",
+          "confidence": 0.95,
+          "description": "Log4Shell RCE vulnerability in Apache Log4j",
+          "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-44228"],
+          "tags": ["rce", "log4j", "java", "deserialization"]
+        },
+        {
+          "id": "CVE-2023-23397",
+          "type": "cve",
+          "category": "payload",
+          "pattern": "CVE-2023-23397|Outlook.*elevation|privilege.*escalation.*outlook",
+          "pattern_type": "regex",
+          "severity": "critical",
+          "confidence": 0.9,
+          "description": "Microsoft Outlook Elevation of Privilege Vulnerability",
+          "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-23397"],
+          "tags": ["eop", "outlook", "microsoft", "zero-click"]
+        },
+        {
+          "id": "T1059.004",
+          "type": "mitre",
+          "category": "behavior",
+          "pattern": "powershell|powershell.exe|pwsh|Invoke-Expression|IEX|DownloadString",
+          "pattern_type": "regex",
+          "severity": "high",
+          "confidence": 0.8,
+          "description": "MITRE ATT&CK T1059.004 - PowerShell Command and Scripting Interpreter",
+          "references": ["https://attack.mitre.org/techniques/T1059/004/"],
+          "tags": ["execution", "powershell", "lolbin"]
+        },
+        {
+          "id": "IOC-COBEACON-001",
+          "type": "ioc",
+          "category": "infrastructure",
+          "pattern": "cobaltstrike|beacon|artifactkit|malleable",
+          "pattern_type": "regex",
+          "severity": "critical",
+          "confidence": 0.95,
+          "description": "Cobalt Strike Beacon indicators",
+          "references": ["https://www.cobaltstrike.com/"],
+          "tags": ["c2", "cobalt-strike", "beacon", "red-team"]
+        },
+        {
+          "id": "IOC-MIMIKATZ-001",
+          "type": "ioc",
+          "category": "payload",
+          "pattern": "mimikatz|sekurlsa|lsass|wdigest|credential.*dump",
+          "pattern_type": "regex",
+          "severity": "critical",
+          "confidence": 0.95,
+          "description": "Mimikatz credential dumping tool",
+          "references": ["https://github.com/gentilkiwi/mimikatz"],
+          "tags": ["credential-theft", "mimikatz", "lsass"]
+        },
+        {
+          "id": "IOC-REVSHELL-001",
+          "type": "ioc",
+          "category": "network",
+          "pattern": "reverse.*shell|revshell|bash.*-i|/dev/tcp|nc.*-e|ncat.*-e",
+          "pattern_type": "regex",
+          "severity": "critical",
+          "confidence": 0.9,
+          "description": "Reverse shell patterns",
+          "tags": ["reverse-shell", "backdoor", "persistence"]
+        },
+        {
+          "id": "IOC-CRYPTOMINER-001",
+          "type": "ioc",
+          "category": "behavior",
+          "pattern": "xmrig|minergate|cryptonight|monero|stratum\\+tcp|coin.*mine",
+          "pattern_type": "regex",
+          "severity": "high",
+          "confidence": 0.9,
+          "description": "Cryptocurrency miner indicators",
+          "tags": ["cryptominer", "resource-hijacking", "monero"]
+        },
+        {
+          "id": "IOC-KUBECTL-001",
+          "type": "ioc",
+          "category": "behavior",
+          "pattern": "kubectl|k8s|kubernetes.*api|serviceaccount|token.*mount",
+          "pattern_type": "regex",
+          "severity": "medium",
+          "confidence": 0.7,
+          "description": "Kubernetes reconnaissance/attack patterns",
+          "tags": ["kubernetes", "reconnaissance", "privilege-escalation"]
+        }
+      ]
+    }

@@ -1,0 +1,709 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*']
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly security scan
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  GO_VERSION: '1.22'
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '20'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.59
+          args: --config=.golangci.yml
+          only-new-issues: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install Ruff
+        run: pip install ruff==0.2.0
+
+      - name: Lint Python with Ruff
+        run: |
+          cd services/ai-copilot && ruff check src/ tests/
+          cd services/response-orchestrator && ruff check src/ tests/
+          cd services/detection-engine && ruff check src/ tests/
+          cd services/api-gateway && ruff check src/ tests/
+          cd services/emulation-controller && ruff check src/ tests/
+
+      - name: Lint YAML
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          config_file: .yamllint.yml
+          strict: true
+
+      - name: Lint Dockerfiles
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          config: .hadolint.yaml
+          recursive: true
+
+      - name: Check Go mod tidy
+        run: |
+          cd services/detection-engine && go mod tidy && git diff --exit-code
+          cd services/response-orchestrator && go mod tidy && git diff --exit-code
+          cd services/api-gateway && go mod tidy && git diff --exit-code
+          cd services/emulation-controller && go mod tidy && git diff --exit-code
+          cd services/detection-engine && go mod tidy && git diff --exit-code
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -fmt sarif -out results.sarif ./services/... ./packages/...
+        continue-on-error: true
+
+      - name: Upload gosec results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+          category: gosec
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./services/... ./packages/...
+        continue-on-error: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install security tools
+        run: |
+          pip install bandit safety pip-audit
+
+      - name: Run bandit
+        run: |
+          cd services/ai-copilot && bandit -r src/ -f json -o bandit-report.json || true
+
+      - name: Run safety
+        run: |
+          cd services/ai-copilot && safety check --json --output safety-report.json || true
+
+      - name: Run pip-audit
+        run: |
+          cd services/ai-copilot && pip-audit --format=json --output=pip-audit-report.json || true
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs.sarif'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+
+      - name: Upload Trivy FS results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  test-go:
+    name: Go Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run Go tests
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./services/detection-engine/... ./services/response-orchestrator/... ./services/api-gateway/... ./services/emulation-controller/... ./services/detection-engine/... ./packages/...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          flags: go
+          fail_ci_if_error: false
+
+  test-python:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd services/ai-copilot
+          pip install uv
+          uv sync --all-extras
+
+      - name: Run Python tests
+        run: |
+          cd services/ai-copilot
+          pytest -v --cov=ai_copilot --cov-report=xml --cov-report=term-missing tests/
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./services/ai-copilot/coverage.xml
+          flags: python
+          fail_ci_if_error: false
+
+  build:
+    name: Build & Push Images
+    needs: [lint, security, test-go, test-python]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for telemetry-sensor
+        id: meta-sensor
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push telemetry-sensor
+        uses: docker/build-push-action@v5
+        with:
+          context: ./cmd/telemetry-sensor
+          push: true
+          tags: ${{ steps.meta-sensor.outputs.tags }}
+          labels: ${{ steps.meta-sensor.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Extract metadata for threat-contextualizer
+        id: meta-contextualizer
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push threat-contextualizer
+        uses: docker/build-push-action@v5
+        with:
+          context: ./cmd/threat-contextualizer
+          push: true
+          tags: ${{ steps.meta-contextualizer.outputs.tags }}
+          labels: ${{ steps.meta-contextualizer.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Extract metadata for reconciler-engine
+        id: meta-reconciler
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push reconciler-engine
+        uses: docker/build-push-action@v5
+        with:
+          context: ./cmd/reconciler-engine
+          push: true
+          tags: ${{ steps.meta-reconciler.outputs.tags }}
+          labels: ${{ steps.meta-reconciler.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Extract metadata for api-gateway
+        id: meta-api-gateway
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/api-gateway
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push api-gateway
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/api-gateway
+          push: true
+          tags: ${{ steps.meta-api-gateway.outputs.tags }}
+          labels: ${{ steps.meta-api-gateway.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Extract metadata for detection-engine
+        id: meta-detection
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/detection-engine
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push detection-engine
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/detection-engine
+          push: true
+          tags: ${{ steps.meta-detection.outputs.tags }}
+          labels: ${{ steps.meta-detection.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Extract metadata for response-orchestrator
+        id: meta-response
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/response-orchestrator
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push response-orchestrator
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/response-orchestrator
+          push: true
+          tags: ${{ steps.meta-response.outputs.tags }}
+          labels: ${{ steps.meta-response.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Extract metadata for ai-copilot
+        id: meta-ai
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/ai-copilot
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push ai-copilot
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/ai-copilot
+          push: true
+          tags: ${{ steps.meta-ai.outputs.tags }}
+          labels: ${{ steps.meta-ai.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Extract metadata for emulation-controller
+        id: meta-emulation
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/emulation-controller
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push emulation-controller
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/emulation-controller
+          push: true
+          tags: ${{ steps.meta-emulation.outputs.tags }}
+          labels: ${{ steps.meta-emulation.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Extract metadata for simulators
+        id: meta-simulators
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/auth-simulator
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/workload-simulator
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/dns-simulator
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/traffic-simulator
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/target-api
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push simulators
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta-simulators.outputs.tags }}
+          labels: ${{ steps.meta-simulators.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Extract metadata for analyst-console
+        id: meta-console
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/analyst-console
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push analyst-console
+        uses: docker/build-push-action@v5
+        with:
+          context: ./web/analyst-console
+          push: true
+          tags: ${{ steps.meta-console.outputs.tags }}
+          labels: ${{ steps.meta-console.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+  integration-test:
+    name: Integration Tests
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: aegisforge-test
+          config: scripts/kind-config.yaml
+          image: kindest/node:v1.28.0
+
+      - name: Load images into Kind
+        run: |
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/api-gateway:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/detection-engine:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/response-orchestrator:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/ai-copilot:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/emulation-controller:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/analyst-console:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/target-api:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/auth-simulator:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/workload-simulator:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/dns-simulator:latest --name aegisforge-test
+          kind load docker-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/traffic-simulator:latest --name aegisforge-test
+
+      - name: Deploy with Kustomize
+        run: |
+          kubectl apply -k deploy/manifests/overlays/development
+          kubectl wait --for=condition=available --timeout=300s deployment/aegisforge-threat-contextualizer -n incident-response
+          kubectl wait --for=condition=available --timeout=300s deployment/aegisforge-reconciler-engine -n incident-response
+          kubectl wait --for=condition=ready --timeout=300s pod -l app.kubernetes.io/name=aegisforge-telemetry-sensor -n incident-response
+
+      - name: Run integration tests
+        run: |
+          cd tests/integration
+          go test -v ./...
+
+      - name: Run chaos test (smoke)
+        run: |
+          cd tests/chaos
+          pip install -r requirements.txt
+          python chaos_test.py --namespace incident-response --duration 60 --scenarios burst_traffic payload_spike
+
+  release:
+    name: Release
+    needs: [build, integration-test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.5.0
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0.17.0
+
+      - name: Generate SBOM and Sign - telemetry-sensor
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor:${{ github.ref_name }} sensor-image:local
+          syft sensor-image:local -o spdx-json=sbom-sensor.spdx.json
+          syft sensor-image:local -o cyclonedx-json=sbom-sensor.cdx.json
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor:${{ github.ref_name }}
+          cosign attest --predicate sbom-sensor.spdx.json --type spdx ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/telemetry-sensor:${{ github.ref_name }}
+
+      - name: Generate SBOM and Sign - threat-contextualizer
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer:${{ github.ref_name }} contextualizer-image:local
+          syft contextualizer-image:local -o spdx-json=sbom-contextualizer.spdx.json
+          syft contextualizer-image:local -o cyclonedx-json=sbom-contextualizer.cdx.json
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer:${{ github.ref_name }}
+          cosign attest --predicate sbom-contextualizer.spdx.json --type spdx ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/threat-contextualizer:${{ github.ref_name }}
+
+      - name: Generate SBOM and Sign - reconciler-engine
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine:${{ github.ref_name }} reconciler-image:local
+          syft reconciler-image:local -o spdx-json=sbom-reconciler.spdx.json
+          syft reconciler-image:local -o cyclonedx-json=sbom-reconciler.cdx.json
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine:${{ github.ref_name }}
+          cosign attest --predicate sbom-reconciler.spdx.json --type spdx ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/reconciler-engine:${{ github.ref_name }}
+
+      - name: Generate SBOM and Sign - api-gateway
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/api-gateway:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/api-gateway:${{ github.ref_name }} api-gateway-image:local
+          syft api-gateway-image:local -o spdx-json=sbom-api-gateway.spdx.json
+          syft api-gateway-image:local -o cyclonedx-json=sbom-api-gateway.cdx.json
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/api-gateway:${{ github.ref_name }}
+          cosign attest --predicate sbom-api-gateway.spdx.json --type spdx ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/api-gateway:${{ github.ref_name }}
+
+      - name: Generate SBOM and Sign - detection-engine
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/detection-engine:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/detection-engine:${{ github.ref_name }} detection-image:local
+          syft detection-image:local -o spdx-json=sbom-detection.spdx.json
+          syft detection-image:local -o cyclonedx-json=sbom-detection.cdx.json
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/detection-engine:${{ github.ref_name }}
+          cosign attest --predicate sbom-detection.spdx.json --type spdx ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/detection-engine:${{ github.ref_name }}
+
+      - name: Generate SBOM and Sign - response-orchestrator
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/response-orchestrator:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/response-orchestrator:${{ github.ref_name }} response-image:local
+          syft response-image:local -o spdx-json=sbom-response.spdx.json
+          syft response-image:local -o cyclonedx-json=sbom-response.cdx.json
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/response-orchestrator:${{ github.ref_name }}
+          cosign attest --predicate sbom-response.spdx.json --type spdx ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/response-orchestrator:${{ github.ref_name }}
+
+      - name: Generate SBOM and Sign - ai-copilot
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/ai-copilot:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/ai-copilot:${{ github.ref_name }} ai-copilot-image:local
+          syft ai-copilot-image:local -o spdx-json=sbom-ai-copilot.spdx.json
+          syft ai-copilot-image:local -o cyclonedx-json=sbom-ai-copilot.cdx.json
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/ai-copilot:${{ github.ref_name }}
+          cosign attest --predicate sbom-ai-copilot.spdx.json --type spdx ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/ai-copilot:${{ github.ref_name }}
+
+      - name: Generate SBOM and Sign - emulation-controller
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/emulation-controller:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/emulation-controller:${{ github.ref_name }} emulation-image:local
+          syft emulation-image:local -o spdx-json=sbom-emulation.spdx.json
+          syft emulation-image:local -o cyclonedx-json=sbom-emulation.cdx.json
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/emulation-controller:${{ github.ref_name }}
+          cosign attest --predicate sbom-emulation.spdx.json --type spdx ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/emulation-controller:${{ github.ref_name }}
+
+      - name: Generate SBOM and Sign - ai-copilot
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/ai-copilot:${{ github.ref_name }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/ai-copilot:${{ github.ref_name }} ai-copilot-image:local
+          syft ai-copilot-image:local -o spdx-json=sbom-ai-copilot.spdx.json
+          syft ai-copilot-image:local -o cyclonedx-json=sbom-ai-copilot.cdx.json
+          cosign sign --yes --annotations "version=${{ github.ref_name }}" ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/ai-copilot:${{ github.ref_name }}
+          cosign attest --predicate sbom-ai-copilot.spdx.json --type spdx ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/ai-copilot:${{ github.ref_name }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sbom-*.spdx.json
+            sbom-*.cdx.json
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+
+  dependency-check:
+    name: Dependency Update Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Check Go updates
+        run: |
+          cd services/telemetry-sensor && go list -u -m -json all | go-mod-outdated -update -direct
+          cd services/reconciler-engine && go list -u -m -json all | go-mod-outdated -update -direct
+          cd services/detection-engine && go list -u -m -json all | go-mod-outdated -update -direct
+          cd services/response-orchestrator && go list -u -m -json all | go-mod-outdated -update -direct
+          cd services/api-gateway && go list -u -m -json all | go-mod-outdated -update -direct
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Check Python updates
+        run: |
+          cd services/ai-copilot
+          pip install uv
+          uv lock --upgrade
+          git diff uv.lock
+
+      - name: Create PR for updates
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update dependencies"
+          title: "chore: weekly dependency updates"
+          body: |
+            Automated dependency updates from scheduled CI run.
+            Please review and merge if tests pass.
+          branch: dependency-updates
+          delete-branch: true

@@ -1,0 +1,499 @@
+# Default values for AegisForge Helm chart
+# This file contains all configurable values for the AegisForge platform
+
+global:
+  # Image registry configuration
+  imageRegistry: "docker.io"
+  imagePullSecrets: []
+  imagePullPolicy: IfNotPresent
+  imageTag: "latest"
+  
+  # Namespace configuration
+  namespace: "aegisforge"
+  labNamespace: "aegisforge-lab"
+  monitoringNamespace: "monitoring"
+  
+  # Security
+  rbacEnabled: true
+  networkPoliciesEnabled: true
+  podSecurityStandard: "restricted"
+  
+  # Resources
+  defaultResources:
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+  
+  # Storage
+  storageClass: "fast-ssd"
+  
+  # AI Configuration
+  ai:
+    ollama:
+      model: "llama3.2:1b"
+      embeddingModel: "all-MiniLM-L6-v2"
+      resources:
+        limits:
+          cpu: "4000m"
+          memory: "8Gi"
+        requests:
+          cpu: "1000m"
+          memory: "2Gi"
+    qdrant:
+      resources:
+        limits:
+          cpu: "2000m"
+          memory: "4Gi"
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
+    embeddings:
+      model: "all-MiniLM-L6-v2"
+      batchSize: 32
+  
+  # Security
+  security:
+    aiRedactSecrets: true
+    aiRedactPII: true
+    aiRedactIPs: true
+    aiRedactTokens: true
+    responseDryRun: true
+    responseRequireApproval: true
+    responseNamespace: "aegisforge-lab"
+  
+  # Event Backbone
+  eventBackbone:
+    type: "redpanda"  # or "kafka"
+    brokers: 3
+    replicationFactor: 2
+  
+  # Database
+  database:
+    postgresql:
+      version: "16"
+      resources:
+        limits:
+          cpu: "2000m"
+          memory: "4Gi"
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
+      persistence:
+        enabled: true
+        size: "50Gi"
+  
+  # Object Storage
+  objectStorage:
+    minio:
+      version: "RELEASE.2024-01-16T16-07-26Z"
+      resources:
+        limits:
+          cpu: "1000m"
+          memory: "1Gi"
+        requests:
+          cpu: "250m"
+          memory: "256Mi"
+      persistence:
+        enabled: true
+        size: "100Gi"
+  
+  # Observability
+  observability:
+    prometheus:
+      version: "2.48.0"
+      retention: "30d"
+      resources:
+        limits:
+          cpu: "2000m"
+          memory: "4Gi"
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
+      persistence:
+        enabled: true
+        size: "50Gi"
+    grafana:
+      version: "10.2.0"
+      adminPassword: "admin"
+      resources:
+        limits:
+          cpu: "1000m"
+          memory: "1Gi"
+        requests:
+          cpu: "250m"
+          memory: "256Mi"
+      persistence:
+        enabled: true
+        size: "10Gi"
+    loki:
+      version: "2.9.0"
+      resources:
+        limits:
+          cpu: "1000m"
+          memory: "1Gi"
+        requests:
+          cpu: "250m"
+          memory: "256Mi"
+      persistence:
+        enabled: true
+        size: "50Gi"
+    loki:
+      version: "2.9.0"
+    tempo:
+      version: "2.4.0"
+    otelCollector:
+      version: "0.95.0"
+    falco:
+      version: "0.36.0"
+  
+  # Event Backbone
+  redpanda:
+    version: "v23.3.10"
+    replicas: 3
+    resources:
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+    persistence:
+      enabled: true
+      size: "20Gi"
+  
+  # Qdrant
+  qdrant:
+    version: "1.8.0"
+    replicas: 1
+    resources:
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+    persistence:
+      enabled: true
+      size: "20Gi"
+  
+  # Ollama
+  ollama:
+    version: "0.1.42"
+    resources:
+      limits:
+        cpu: "4000m"
+        memory: "8Gi"
+      requests:
+        cpu: "1000m"
+        memory: "2Gi"
+    persistence:
+      enabled: true
+      size: "20Gi"
+  
+  # Core Services
+  apiGateway:
+    replicas: 2
+    resources:
+      limits:
+        cpu: "2000m"
+        memory: "2Gi"
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+  
+  detectionEngine:
+    replicas: 2
+    resources:
+      limits:
+        cpu: "2000m"
+        memory: "2Gi"
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+  
+  responseOrchestrator:
+    replicas: 1
+    resources:
+      limits:
+        cpu: "2000m"
+        memory: "2Gi"
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+  
+  aiCopilot:
+    replicas: 1
+    resources:
+      limits:
+        cpu: "4000m"
+        memory: "8Gi"
+      requests:
+        cpu: "1000m"
+        memory: "2Gi"
+  
+  emulationController:
+    replicas: 1
+    resources:
+      limits:
+        cpu: "2000m"
+        memory: "2Gi"
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+  
+  # Simulators
+  authSimulator:
+    replicas: 1
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "256Mi"
+      requests:
+        cpu: "100m"
+        memory: "64Mi"
+  
+  workloadSimulator:
+    replicas: 1
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "256Mi"
+      requests:
+        cpu: "100m"
+        memory: "64Mi"
+  
+  dnsSimulator:
+    replicas: 1
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "256Mi"
+      requests:
+        cpu: "100m"
+        memory: "64Mi"
+  
+  trafficSimulator:
+    replicas: 1
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "256Mi"
+      requests:
+        cpu: "100m"
+        memory: "64Mi"
+  
+  targetApi:
+    replicas: 2
+    resources:
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+      requests:
+        cpu: "250m"
+        memory: "256Mi"
+  
+  # Analyst Console
+  analystConsole:
+    replicas: 2
+    resources:
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+      requests:
+        cpu: "250m"
+        memory: "256Mi"
+  
+  # Keycloak
+  keycloak:
+    enabled: true
+    version: "24.0"
+    replicas: 1
+    resources:
+      limits:
+        cpu: "2000m"
+        memory: "2Gi"
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+    persistence:
+      enabled: true
+      size: "10Gi"
+  
+  # Redis
+  redis:
+    version: "7-alpine"
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "256Mi"
+      requests:
+        cpu: "100m"
+        memory: "64Mi"
+    persistence:
+      enabled: true
+      size: "5Gi"
+  
+  # Network Policies
+  networkPolicies:
+    enabled: true
+    defaultDeny: true
+    ingress:
+      - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+        ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+        - protocol: TCP
+          port: 8002
+        - protocol: TCP
+          port: 8003
+        - protocol: TCP
+          port: 8004
+        - protocol: TCP
+          port: 9090
+    egress:
+      - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+        ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+      - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        ports:
+        - protocol: TCP
+          port: 443
+  
+  # Pod Disruption Budgets
+  podDisruptionBudgets:
+    enabled: true
+    minAvailable:
+      apiGateway: 1
+      detectionEngine: 1
+      aiCopilot: 0
+      emulationController: 0
+      targetApi: 1
+  
+  # Horizontal Pod Autoscalers
+  hpa:
+    enabled: true
+    apiGateway:
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilization: 70
+    detectionEngine:
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilization: 70
+    aiCopilot:
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilization: 70
+    targetApi:
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilization: 70
+  
+  # Ingress
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/rate-limit: "1000"
+      nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    hosts:
+      - host: aegisforge.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+            service: analyst-console
+            port: 3000
+          - path: /api
+            pathType: Prefix
+            service: api-gateway
+            port: 8000
+    tls:
+      - secretName: aegisforge-tls
+        hosts:
+          - aegisforge.example.com
+  
+  # Cert Manager
+  certManager:
+    enabled: true
+    email: "admin@example.com"
+    issuer: "letsencrypt-prod"
+  
+  # External Secrets
+  externalSecrets:
+    enabled: false
+    provider: "vault"  # or "aws", "azure", "gcp"
+  
+  # Backup
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"
+    retention: "7d"
+    destination: "s3://aegisforge-backups"
+
+
+# Development overrides
+development:
+  imageTag: "dev"
+  imagePullPolicy: "Always"
+  ai:
+    ollama:
+      model: "llama3.2:1b"
+      resources:
+        limits:
+          cpu: "2000m"
+          memory: "4Gi"
+  replicas:
+    apiGateway: 1
+    detectionEngine: 1
+    aiCopilot: 1
+    targetApi: 1
+  resources:
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+  ingress:
+    enabled: false
+  keycloak:
+    enabled: false
+  externalSecrets:
+    enabled: false
+
+# Production overrides
+production:
+  imageTag: "latest"
+  imagePullPolicy: "IfNotPresent"
+  replicas:
+    apiGateway: 3
+    detectionEngine: 3
+    aiCopilot: 2
+    targetApi: 3
+  resources:
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+  ingress:
+    enabled: true
+  keycloak:
+    enabled: true
+  externalSecrets:
+    enabled: true
+    provider: "vault"

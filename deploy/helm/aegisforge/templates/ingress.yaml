@@ -1,0 +1,38 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-ingress
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+  annotations:
+    {{- range $key, $value := .Values.ingress.annotations }}
+    {{ $key }}: "{{ $value }}"
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+  {{- range .Values.ingress.tls }}
+  - secretName: {{ .secretName }}
+    hosts:
+    {{- range .hosts }}
+    - {{ . }}
+    {{- end }}
+  {{- end }}
+  rules:
+  {{- range .Values.ingress.hosts }}
+  - host: {{ .host }}
+    http:
+      paths:
+      {{- range .paths }}
+      - path: {{ .path }}
+        pathType: {{ .pathType }}
+        backend:
+          service:
+            name: {{ include "aegisforge.fullname" . }}-{{ .service }}
+            port:
+              number: {{ .port }}
+      {{- end }}
+  {{- end }}
+{{- end }}

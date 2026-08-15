@@ -1,0 +1,264 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-falco
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: falco
+    app.kubernetes.io/component: runtime-security
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: falco
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: falco
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: runtime-security
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8765"
+        prometheus.io/path: "/metrics"
+    spec:
+      hostNetwork: true
+      hostPID: true
+      hostIPC: true
+      serviceAccountName: {{ include "aegisforge.fullname" . }}-falco
+      containers:
+      - name: falco
+        image: "{{ .Values.global.imageRegistry }}/falcosecurity/falco:{{ .Values.global.observability.falco.version | default "0.36.0" }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - name: grpc
+          containerPort: 5060
+          protocol: TCP
+        - name: websocket
+          containerPort: 8765
+          protocol: TCP
+        env:
+        - name: FALCO_GRPC_ENABLED
+          value: "true"
+        - name: FALCO_GRPC_BIND_ADDRESS
+          value: "0.0.0.0:5060"
+        - name: FALCO_WEBSOCKET_ENABLED
+          value: "true"
+        - name: FALCO_WEBSOCKET_BIND_ADDRESS
+          value: "0.0.0.0:8765"
+        - name: FALCO_JSON_OUTPUT
+          value: "true"
+        - name: FALCO_OUTPUT_FILE
+          value: "/var/log/falco/falco.json"
+        resources:
+          {{- toYaml .Values.global.observability.falco.resources | nindent 10 }}
+        volumeMounts:
+        - name: docker-socket
+          mountPath: /host/var/run/docker.sock
+          readOnly: true
+        - name: dev
+          mountPath: /host/dev
+          readOnly: true
+        - name: proc
+          mountPath: /host/proc
+          readOnly: true
+        - name: boot
+          mountPath: /host/boot
+          readOnly: true
+        - name: lib-modules
+          mountPath: /host/lib/modules
+          readOnly: true
+        - name: usr
+          mountPath: /host/usr
+          readOnly: true
+        - name: falco-rules
+          mountPath: /etc/falco/falco_rules.local.yaml
+          subPath: falco-rules.yaml
+          readOnly: true
+        - name: falco-config
+          mountPath: /etc/falco/falco.yaml
+          subPath: falco-config.yaml
+          readOnly: true
+        - name: falco-log
+          mountPath: /var/log/falco
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8765
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8765
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: docker-socket
+          mountPath: /host/var/run/docker.sock
+          readOnly: true
+        - name: dev
+          mountPath: /host/dev
+          readOnly: true
+        - name: proc
+          mountPath: /host/proc
+          readOnly: true
+        - name: boot
+          mountPath: /host/boot
+          readOnly: true
+        - name: lib-modules
+          mountPath: /host/lib/modules
+          readOnly: true
+        - name: usr
+          mountPath: /host/usr
+          readOnly: true
+        - name: falco-rules
+          mountPath: /etc/falco/falco_rules.local.yaml
+          subPath: falco-rules.yaml
+          readOnly: true
+        - name: falco-config
+          mountPath: /etc/falco/falco.yaml
+          subPath: falco-config.yaml
+          readOnly: true
+        - name: falco-log
+          mountPath: /var/log/falco
+      volumes:
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+      - name: dev
+        hostPath:
+          path: /dev
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: boot
+        hostPath:
+          path: /boot
+      - name: lib-modules
+        hostPath:
+          path: /lib/modules
+      - name: usr
+        hostPath:
+          path: /usr
+      - name: falco-rules
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-falco-rules
+      - name: falco-config
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-falco-config
+      - name: falco-log
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-falco
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: falco
+spec:
+  type: ClusterIP
+  ports:
+  - name: grpc
+    port: 5060
+    targetPort: 5060
+    protocol: TCP
+  - name: websocket
+    port: 8765
+    targetPort: 8765
+    protocol: TCP
+  - name: metrics
+    port: 8765
+    targetPort: 8765
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: falco
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-falco-config
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  falco.yaml: |
+    json_output: true
+    json_include_output_property: true
+    grpc:
+      enabled: true
+      bind_address: "0.0.0.0:5060"
+    grpc_output:
+      enabled: true
+    websocket:
+      enabled: true
+      bind_address: "0.0.0.0:8765"
+    file_output:
+      enabled: true
+      filename: /var/log/falco/falco.json
+      keep_alive: true
+    log_level: info
+    file_output:
+      enabled: true
+      filename: /var/log/falco/falco.log
+      keep_alive: true
+    buffered_outputs: false
+    syscall_event_drops:
+      actions:
+      - log
+      - poke
+      rate: 0.05
+      max_burst: 1000
+    syscall_event_drops_threshold: 1.0
+    priority: 10
+    rules_files:
+    - /etc/falco/falco_rules.local.yaml
+    - /etc/falco/falco_rules.yaml
+    - /etc/falco/k8s_audit_rules.yaml
+    - /etc/falco/rules.d
+    time_format_iso_8601: true
+    outputs_rate: 1
+    watch_config_files: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-falco-rules
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  falco-rules.yaml: |
+    # Custom Falco rules for AegisForge
+    - rule: AegisForge Unexpected Network Connection
+      desc: Detect unexpected outbound connections
+      condition: >
+        evt.type = connect and
+        fd.sockfamily = AF_INET and
+        not container.image.repository in (allowed_images)
+      output: "Unexpected connection from %container.name to %fd.rip"
+      priority: WARNING
+      tags: [network, aegisforge]
+    
+    - rule: AegisForge Privilege Escalation Attempt
+      desc: Detect privilege escalation in containers
+      condition: >
+        evt.type in (setuid, setgid, capset) and
+        not user.name in (root, appuser)
+      output: "Privilege escalation attempt by %user.name in %container.name"
+      priority: CRITICAL
+      tags: [privilege, aegisforge]
+    
+    - rule: AegisForge Container Escape Attempt
+      desc: Detect container escape via privileged operations
+      condition: >
+        evt.type in (container_escape, kernel_exploit) or
+        evt.type = execve and proc.name in (kubectl, kubeadm, helm)
+      output: "Container escape attempt by %proc.name in %container.name"
+      priority: CRITICAL
+      tags: [container, escape, aegisforge]

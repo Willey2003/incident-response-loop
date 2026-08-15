@@ -1,0 +1,168 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-ai-copilot
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: ai-copilot
+    app.kubernetes.io/component: ai-copilot
+spec:
+  replicas: {{ .Values.aiCopilot.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-copilot
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-copilot
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: ai-copilot
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8003"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "aegisforge.fullname" . }}-ai-copilot
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: ai-copilot
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.global.imagePrefix | default "aegisforge" }}/ai-copilot:{{ .Values.global.imageTag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - name: http
+          containerPort: 8003
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: {{ .Values.global.environment | default "production" }}
+        - name: LOG_LEVEL
+          value: {{ .Values.global.logLevel | default "INFO" }}
+        - name: POSTGRES_HOST
+          value: {{ include "aegisforge.fullname" . }}-postgres
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: {{ .Values.global.database.postgresql.dbName | default "aegisforge" }}
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: password
+        - name: OLLAMA_HOST
+          value: {{ include "aegisforge.fullname" . }}-ollama
+        - name: OLLAMA_PORT
+          value: "11434"
+        - name: OLLAMA_MODEL
+          value: {{ .Values.global.ai.ollama.model | default "llama3.2:1b" }}
+        - name: OLLAMA_EMBEDDING_MODEL
+          value: {{ .Values.global.ai.embeddingModel | default "all-MiniLM-L6-v2" }}
+        - name: QDRANT_HOST
+          value: {{ include "aegisforge.fullname" . }}-qdrant
+        - name: QDRANT_PORT
+          value: "6333"
+        - name: QDRANT_COLLECTION
+          value: security-knowledge
+        - name: EMBEDDING_MODEL
+          value: {{ .Values.global.ai.embeddings.model | default "all-MiniLM-L6-v2" }}
+        - name: AI_REDACT_SECRETS
+          value: "{{ .Values.global.security.aiRedactSecrets | default "true" }}"
+        - name: AI_REDACT_PII
+          value: "{{ .Values.global.security.aiRedactPII | default "true" }}"
+        - name: AI_REDACT_IPS
+          value: "{{ .Values.global.security.aiRedactIPs | default "true" }}"
+        - name: AI_REDACT_TOKENS
+          value: "{{ .Values.global.security.aiRedactTokens | default "true" }}"
+        - name: AI_MAX_TOKENS
+          value: "{{ .Values.global.security.aiMaxTokens | default "2048" }}"
+        - name: AI_TEMPERATURE
+          value: "{{ .Values.global.security.aiTemperature | default "0.1" }}"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: {{ .Values.global.observability.otelCollector.endpoint | default "http://otel-collector:4317" }}
+        - name: OTEL_SERVICE_NAME
+          value: ai-copilot
+        resources:
+          {{- toYaml .Values.aiCopilot.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8003
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8003
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - name: config
+          mountPath: /etc/aegisforge
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-ai-copilot-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-ai-copilot
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: ai-copilot
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8003
+    targetPort: 8003
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: ai-copilot
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-ai-copilot-config
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    environment: production
+    log_level: info
+    log_format: json
+    ollama_host: "{{ include "aegisforge.fullname" . }}-ollama"
+    ollama_port: 11434
+    ollama_model: "{{ .Values.global.ai.ollama.model | default "llama3.2:1b" }}"
+    ollama_embedding_model: "{{ .Values.global.ai.embeddingModel | default "all-MiniLM-L6-v2" }}"
+    qdrant_host: "{{ include "aegisforge.fullname" . }}-qdrant"
+    qdrant_port: 6333
+    qdrant_collection: security-knowledge
+    embedding_model: all-MiniLM-L6-v2
+    ai_redact_secrets: true
+    ai_redact_pii: true
+    ai_redact_ips: true
+    ai_redact_tokens: true
+    ai_max_tokens: 2048
+    ai_temperature: 0.1

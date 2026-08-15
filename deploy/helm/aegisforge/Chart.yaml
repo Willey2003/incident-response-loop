@@ -1,0 +1,17 @@
+apiVersion: v2
+name: aegisforge
+description: AegisForge - CPU-only Cyber Defense Platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - security
+  - cyber-defense
+  - kubernetes
+  - ai
+  - incident-response
+maintainers:
+  - name: AegisForge Team
+    email: team@aegisforge.example.com
+sources:
+  - https://github.com/your-org/aegisforge

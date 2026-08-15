@@ -1,0 +1,193 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-response-orchestrator
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: response-orchestrator
+    app.kubernetes.io/component: response-orchestrator
+spec:
+  replicas: {{ .Values.responseOrchestrator.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: response-orchestrator
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: response-orchestrator
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: response-orchestrator
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8002"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "aegisforge.fullname" . }}-response-orchestrator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: response-orchestrator
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.global.imagePrefix | default "aegisforge" }}/response-orchestrator:{{ .Values.global.imageTag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - name: http
+          containerPort: 8002
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: {{ .Values.global.environment | default "production" }}
+        - name: LOG_LEVEL
+          value: {{ .Values.global.logLevel | default "INFO" }}
+        - name: POSTGRES_HOST
+          value: {{ include "aegisforge.fullname" . }}-postgres
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: {{ .Values.global.database.postgresql.dbName | default "aegisforge" }}
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-postgres-secret
+              key: password
+        - name: REDPANDA_BROKERS
+          value: {{ include "aegisforge.fullname" . }}-redpanda:9092
+        - name: REDPANDA_TOPIC_ALERTS
+          value: security-alerts
+        - name: REDPANDA_TOPIC_INCIDENTS
+          value: security-incidents
+        - name: REDPANDA_TOPIC_AUDIT
+          value: audit-logs
+        - name: RESPONSE_NAMESPACE
+          value: {{ .Values.global.security.responseNamespace | default "aegisforge-lab" }}
+        - name: RESPONSE_DRY_RUN
+          value: "{{ .Values.global.security.responseDryRun | default "true" }}"
+        - name: RESPONSE_REQUIRE_APPROVAL
+          value: "{{ .Values.global.security.responseRequireApproval | default "true" }}"
+        - name: RESPONSE_ALLOWLIST_FILE
+          value: /etc/aegisforge/allowlist.yaml
+        - name: RESPONSE_CIRCUIT_BREAKER_THRESHOLD
+          value: "5"
+        - name: RESPONSE_CIRCUIT_BREAKER_TIMEOUT
+          value: "60"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: {{ .Values.global.observability.otelCollector.endpoint | default "http://otel-collector:4317" }}
+        - name: OTEL_SERVICE_NAME
+          value: response-orchestrator
+        resources:
+          {{- toYaml .Values.responseOrchestrator.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /etc/aegisforge
+          readOnly: true
+        - name: allowlist
+          mountPath: /etc/aegisforge/allowlist.yaml
+          subPath: allowlist.yaml
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-response-orchestrator-config
+      - name: allowlist
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-response-orchestrator-allowlist
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-response-orchestrator
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: response-orchestrator
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8002
+    targetPort: 8002
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: response-orchestrator
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-response-orchestrator-config
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    environment: production
+    log_level: info
+    log_format: json
+    postgres_host: "{{ include "aegisforge.fullname" . }}-postgres"
+    postgres_port: 5432
+    postgres_db: aegisforge
+    redpanda_brokers: "{{ include "aegisforge.fullname" . }}-redpanda:9092"
+    response_namespace: aegisforge-lab
+    response_dry_run: true
+    response_require_approval: true
+    response_allowlist_file: /etc/aegisforge/allowlist.yaml
+    response_circuit_breaker_threshold: 5
+    response_circuit_breaker_timeout: 60
+    response_default_timeout: 300
+    response_max_retries: 3
+    response_retry_delay: 10
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-response-orchestrator-allowlist
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  allowlist.yaml: |
+    allowed_resources:
+    - kind: Pod
+      namespace: aegisforge-lab
+    - kind: Deployment
+      namespace: aegisforge-lab
+    - kind: StatefulSet
+      namespace: aegisforge-lab
+    - kind: DaemonSet
+      namespace: aegisforge-lab
+    - kind: NetworkPolicy
+      namespace: aegisforge-lab
+    - kind: ServiceAccount
+      namespace: aegisforge-lab
+    - kind: RoleBinding
+      namespace: aegisforge-lab
+    - kind: ClusterRoleBinding
+      cluster: true

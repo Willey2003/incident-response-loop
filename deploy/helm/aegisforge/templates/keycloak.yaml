@@ -1,0 +1,295 @@
+{{- if .Values.keycloak.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-keycloak
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/component: identity
+spec:
+  replicas: {{ .Values.keycloak.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: identity
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "aegisforge.fullname" . }}-keycloak
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: keycloak
+        image: "{{ .Values.global.imageRegistry }}/quay.io/keycloak/keycloak:{{ .Values.keycloak.version | default "24.0" }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        command: ["start-dev", "--import-realm"]
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: https
+          containerPort: 8443
+          protocol: TCP
+        - name: metrics
+          containerPort: 9000
+          protocol: TCP
+        env:
+        - name: KEYCLOAK_ADMIN
+          value: {{ .Values.keycloak.admin | default "admin" }}
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-keycloak-secret
+              key: admin-password
+        - name: KC_DB
+          value: {{ .Values.keycloak.dbVendor | default "postgres" }}
+        - name: KC_DB_URL_HOST
+          value: {{ include "aegisforge.fullname" . }}-postgres
+        - name: KC_DB_URL_DATABASE
+          value: {{ .Values.keycloak.dbDatabase | default "keycloak" }}
+        - name: KC_DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-keycloak-secret
+              key: db-username
+        - name: KC_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-keycloak-secret
+              key: db-password
+        resources:
+          {{- toYaml .Values.keycloak.resources | nindent 10 }}
+        volumeMounts:
+        - name: realm-import
+          mountPath: /opt/keycloak/data/import
+        livenessProbe:
+          httpGet:
+            path: /health/ready
+            port: 9000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 9000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - name: realm-import
+          mountPath: /opt/keycloak/data/import
+      volumes:
+      - name: realm-import
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-keycloak-realm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-keycloak
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: keycloak
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: https
+    port: 8443
+    targetPort: 8443
+    protocol: TCP
+  - name: metrics
+    port: 9000
+    targetPort: 9000
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-keycloak-realm
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  realm.json: |
+    {
+      "realm": "aegisforge",
+      "enabled": true,
+      "displayName": "AegisForge",
+      "displayNameHtml": "<div class=\"kc-logo\"><span class=\"kc-logo-text\">AegisForge</span></div>",
+      "sslRequired": "external",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": true,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "permanentLockout": false,
+      "maxFailureWaitSeconds": 900,
+      "minimumQuickLoginWaitSeconds": 60,
+      "waitIncrementSeconds": 60,
+      "quickLoginCheckMilliSeconds": 1000,
+      "maxDeltaTimeSeconds": 43200,
+      "failureFactor": 30,
+      "defaultRoles": ["viewer"],
+      "requiredCredentials": ["password"],
+      "otpPolicyType": "totp",
+      "otpPolicyAlgorithm": "HmacSHA1",
+      "otpPolicyInitialCounter": 0,
+      "otpPolicyDigits": 6,
+      "otpPolicyLookAheadWindow": 1,
+      "otpPolicyPeriod": 30,
+      "otpSupportedApplications": [
+        "FreeOTP",
+        "Google Authenticator",
+        "Microsoft Authenticator"
+      ],
+      "browserSecurityHeaders": {
+        "contentSecurityPolicyReportOnly": "",
+        "xFrameOptions": "SAMEORIGIN",
+        "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
+        "strictTransportSecurity": "max-age=31536000; includeSubDomains",
+        "xContentTypeOptions": "nosniff",
+        "xRobotsTag": "none"
+      },
+      "passwordPolicy": "length(8) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1)",
+      "quickLoginCheckMilliSeconds": 1000,
+      "maxDeltaTimeSeconds": 43200,
+      "failureFactor": 30,
+      "accessTokenLifespan": 300,
+      "refreshTokenMaxReuse": 0,
+      "refreshTokenMaxReuseTime": 0,
+      "accessCodeLifespan": 60,
+      "refreshTokenMaxReuse": 0,
+      "refreshTokenMaxReuseTime": 0,
+      "accessCodeLifespanLogin": 1800,
+      "refreshTokenMaxReuseTime": 0,
+      "oauth2DeviceCodeLifespan": 600,
+      "oauth2DevicePollingInterval": 5,
+      "clients": [
+        {
+          "clientId": "aegisforge-console",
+          "name": "AegisForge Analyst Console",
+          "description": "Analyst Console for AegisForge",
+          "enabled": true,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "aegisforge-console-secret",
+          "redirectUris": [
+            "http://localhost:3000/callback",
+            "https://aegisforge.example.com/callback"
+          ],
+          "webOrigins": [
+            "http://localhost:3000",
+            "https://aegisforge.example.com"
+          ],
+          "protocol": "openid-connect",
+          "clientAuthenticatorType": "client-secret",
+          "publicClient": false,
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": true,
+          "serviceAccountsEnabled": true,
+          "authorizationServicesEnabled": true,
+          "fullScopeAllowed": true,
+          "defaultClientScopes": [
+            "web-origins",
+            "roles",
+            "profile",
+            "email",
+            "microprofile-jwt"
+          ],
+          "optionalClientScopes": [
+            "address",
+            "phone",
+            "offline_access"
+          ],
+          "attributes": {
+            "access.token.lifespan": 300,
+            "refresh.token.max.reuse": 0,
+            "refresh.token.max.reuse.time": 0,
+            "access.code.lifespan": 60,
+            "refresh.token.max.reuse": 0,
+            "refresh.token.max.reuse.time": 0,
+            "access.code.lifespan.login": 1800,
+            "refresh.token.max.reuse.time": 0,
+            "oauth2.device.code.lifespan": 600,
+            "oauth2.device.polling.interval": 5
+          }
+        }
+      ],
+      "roles": {
+        "realm": [
+          {
+            "name": "viewer",
+            "description": "Read-only access to dashboards and alerts"
+          },
+          {
+            "name": "analyst",
+            "description": "Can acknowledge alerts, create incidents, search"
+          },
+          {
+            "name": "incident_commander",
+            "description": "Can approve responses, create tickets, run scenarios"
+          },
+          {
+            "name": "administrator",
+            "description": "Full system access including user management and configuration"
+          }
+        ],
+        "client": {}
+      },
+      "groups": [
+        {
+          "name": "aegisforge-viewers",
+          "roles": ["viewer"]
+        },
+        {
+          "name": "aegisforge-analysts",
+          "roles": ["analyst"]
+        },
+        {
+          "name": "aegisforge-incident-commanders",
+          "roles": ["incident_commander"]
+        },
+        {
+          "name": "aegisforge-administrators",
+          "roles": ["administrator"]
+        }
+      ],
+      "defaultDefaultGroups": [
+        "aegisforge-viewers"
+      ]
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-keycloak-secret
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  admin-password: "admin"
+  db-username: "keycloak"
+  db-password: "keycloak"
+{{- end }}

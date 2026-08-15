@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-prometheus
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: observability
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+      - name: prometheus
+        image: "{{ .Values.global.imageRegistry }}/prom/prometheus:{{ .Values.global.observability.prometheus.version | default "2.48.0" }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        args:
+        - "--config.file=/etc/prometheus/prometheus.yml"
+        - "--storage.tsdb.path=/prometheus"
+        - "--storage.tsdb.retention.time=30d"
+        - "--web.enable-lifecycle"
+        - "--web.enable-admin-api"
+        ports:
+        - name: http
+          containerPort: 9090
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+        - name: rules
+          mountPath: /etc/prometheus/rules
+        - name: data
+          mountPath: /prometheus
+        resources:
+          {{- toYaml .Values.global.observability.prometheus.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+        - name: rules
+          mountPath: /etc/prometheus/rules
+        - name: data
+          mountPath: /prometheus
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-prometheus-config
+      - name: rules
+        configMap:
+          name: {{ include "aegisforge.fullname" . }}-prometheus-rules
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-prometheus
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: prometheus
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-prometheus-rules
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+data:
+  alerts.yml: |
+    groups:
+    - name: aegisforge-alerts
+      rules:
+      - alert: HighCPUUsage
+        expr: sum(rate(container_cpu_usage_seconds_total{namespace="{{ include "aegisforge.namespace" . }}"}[5m])) by (pod) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.pod }}"
+          description: "CPU usage on pod {{ $labels.pod }} is above 80%"
+      
+      - alert: HighMemoryUsage
+        expr: sum(container_memory_usage_bytes{namespace="{{ include "aegisforge.namespace" . }}"}) by (pod) / sum(container_spec_memory_limit_bytes{namespace="{{ include "aegisforge.namespace" . }}"}) by (pod) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.pod }}"
+          description: "Memory usage on pod {{ $labels.pod }} is above 85%"
+      
+      - alert: PodNotReady
+        expr: kube_pod_status_ready{namespace="{{ include "aegisforge.namespace" . }}",condition="true"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pod {{ $labels.pod }} not ready"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has not been ready for 5 minutes"
+      
+      - alert: HighAlertVolume
+        expr: sum(rate(alerts_total{namespace="{{ include "aegisforge.namespace" . }}"}[5m])) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High alert volume"
+          description: "Alert volume is above 100 per minute"
+      
+      - alert: AIInferenceLatencyHigh
+        expr: histogram_quantile(0.95, rate(ai_copilot_inference_duration_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI inference latency high"
+          description: "AI copilot inference latency is above 30 seconds"

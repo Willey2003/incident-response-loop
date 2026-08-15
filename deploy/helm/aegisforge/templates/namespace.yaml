@@ -1,0 +1,28 @@
+{{- if .Values.global.rbacEnabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    name: {{ include "aegisforge.namespace" . }}
+    app.kubernetes.io/part-of: aegisforge
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.global.labNamespace }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    name: {{ .Values.global.labNamespace }}
+    app.kubernetes.io/part-of: aegisforge
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.global.monitoringNamespace }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    name: {{ .Values.global.monitoringNamespace }}
+    app.kubernetes.io/part-of: aegisforge
+{{- end }}

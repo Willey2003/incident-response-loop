@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-minio
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: object-storage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: object-storage
+        {{- include "aegisforge.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9000"
+        prometheus.io/path: "/minio/prometheus/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: minio
+        image: "{{ .Values.global.imageRegistry }}/minio/minio:{{ .Values.global.objectStorage.minio.version | default "RELEASE.2024-01-16T16-07-26Z" }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        command:
+        - minio
+        - server
+        - /data
+        - --console-address
+        - ":9001"
+        env:
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-minio-secret
+              key: access-key
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aegisforge.fullname" . }}-minio-secret
+              key: secret-key
+        - name: MINIO_BROWSER_REDIRECT_URL
+          value: ""
+        - name: MINIO_SERVER_URL
+          value: "http://{{ include "aegisforge.fullname" . }}-minio.{{ include "aegisforge.namespace" . }}.svc.cluster.local:9000"
+        - name: MINIO_CONSOLE_ADDRESS
+          value: ":9001"
+        ports:
+        - name: api
+          containerPort: 9000
+          protocol: TCP
+        - name: console
+          containerPort: 9001
+          protocol: TCP
+        - name: metrics
+          containerPort: 9000
+          protocol: TCP
+        resources:
+          {{- toYaml .Values.global.objectStorage.minio.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /minio/health/ready
+            port: 9000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-minio
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+    app.kubernetes.io/name: minio
+spec:
+  type: ClusterIP
+  ports:
+  - name: api
+    port: 9000
+    targetPort: 9000
+    protocol: TCP
+  - name: console
+    port: 9001
+    targetPort: 9001
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "aegisforge.fullname" . }}-minio-secret
+  namespace: {{ include "aegisforge.namespace" . }}
+  labels:
+    {{- include "aegisforge.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  access-key: "minioadmin"
+  secret-key: "minioadmin"

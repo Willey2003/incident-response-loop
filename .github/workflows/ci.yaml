@@ -243,7 +243,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push telemetry-sensor
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./cmd/telemetry-sensor
           push: true
@@ -268,7 +268,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push threat-contextualizer
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./cmd/threat-contextualizer
           push: true
@@ -293,7 +293,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push reconciler-engine
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./cmd/reconciler-engine
           push: true
@@ -318,7 +318,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push api-gateway
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./services/api-gateway
           push: true
@@ -343,7 +343,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push detection-engine
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./services/detection-engine
           push: true
@@ -368,7 +368,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push response-orchestrator
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./services/response-orchestrator
           push: true
@@ -393,7 +393,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push ai-copilot
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./services/ai-copilot
           push: true
@@ -418,7 +418,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push emulation-controller
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./services/emulation-controller
           push: true
@@ -448,7 +448,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push simulators
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -473,7 +473,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push analyst-console
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./web/analyst-console
           push: true

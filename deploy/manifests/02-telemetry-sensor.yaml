@@ -1,0 +1,190 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: telemetry-sensor
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: telemetry-sensor
+    app.kubernetes.io/part-of: incident-response-loop
+    app.kubernetes.io/component: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: telemetry-sensor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: telemetry-sensor
+        app.kubernetes.io/part-of: incident-response-loop
+        app.kubernetes.io/component: monitoring
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: telemetry-sensor
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+      - operator: Exists
+        effect: NoExecute
+      priorityClassName: system-node-critical
+      containers:
+      - name: telemetry-sensor
+        image: registry.local/incident-response/telemetry-sensor:1.0.0
+        imagePullPolicy: Always
+        args:
+        - --config=/etc/telemetry-sensor/config.yaml
+        - --metrics-addr=:9090
+        - --log-level=info
+        - --log-format=json
+        ports:
+        - containerPort: 9090
+          name: metrics
+          hostPort: 9090
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/telemetry-sensor
+          readOnly: true
+        - name: proc
+          mountPath: /host/proc
+          readOnly: true
+        - name: sys
+          mountPath: /host/sys
+          readOnly: true
+        - name: cgroup
+          mountPath: /host/sys/fs/cgroup
+          readOnly: true
+        - name: varlog
+          mountPath: /var/log
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9090
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          capabilities:
+            drop: ["ALL"]
+      volumes:
+      - name: config
+        configMap:
+          name: telemetry-sensor-config
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: sys
+        hostPath:
+          path: /sys
+      - name: cgroup
+        hostPath:
+          path: /sys/fs/cgroup
+      - name: varlog
+        hostPath:
+          path: /var/log
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telemetry-sensor-config
+  namespace: incident-response
+data:
+  config.yaml: |
+    # Telemetry Sensor Configuration
+    sensor_id: ""
+    cluster_name: "vsphere-cluster"
+    namespace: "incident-response"
+    node_name: ""
+
+    metrics_interval: "10s"
+    network_interval: "5s"
+    health_check_interval: "30s"
+
+    burst_threshold_packets: 10000
+    burst_threshold_bytes: 10000000
+    spike_threshold_stddev: 3.0
+    min_sample_window: 10
+    ewma_alpha: 0.3
+
+    alert_endpoint: "http://threat-contextualizer.incident-response.svc.cluster.local:8080/api/v1/alerts"
+    alert_timeout: "5s"
+    alert_batch_size: 100
+    alert_batch_delay: "1s"
+
+    http_max_idle_conns: 100
+    http_max_conns_per_host: 10
+    http_idle_conn_timeout: "90s"
+
+    kubeconfig_path: ""
+    qps: 50
+    burst: 100
+
+    enable_ebpf: false
+    ebpf_map_size: 65536
+    ebpf_program_path: "/opt/ebpf/network_monitor.o"
+
+    max_goroutines: 10000
+    max_memory_bytes: 536870912
+    gc_percent: 50
+
+    enable_pod_metrics: true
+    enable_network_logs: true
+    enable_process_audit: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetry-sensor
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: telemetry-sensor
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9090
+    targetPort: 9090
+    name: metrics
+  selector:
+    app.kubernetes.io/name: telemetry-sensor

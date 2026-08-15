@@ -1,0 +1,181 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reconciler-engine
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: reconciler-engine
+    app.kubernetes.io/part-of: incident-response-loop
+    app.kubernetes.io/component: defense
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: reconciler-engine
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: reconciler-engine
+        app.kubernetes.io/part-of: incident-response-loop
+        app.kubernetes.io/component: defense
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: reconciler-engine
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+      - name: reconciler-engine
+        image: registry.local/incident-response/reconciler-engine:1.0.0
+        imagePullPolicy: Always
+        args:
+        - --config=/etc/reconciler-engine/config.yaml
+        - --metrics-addr=:9090
+        - --log-level=info
+        - --log-format=json
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: RECONCILER_ID
+          value: ""
+        - name: CLUSTER_NAME
+          value: "vsphere-cluster"
+        - name: NAMESPACE
+          value: "incident-response"
+        - name: HTTP_ADDR
+          value: ":8080"
+        - name: ALERT_QUEUE_SIZE
+          value: "1000"
+        - name: ALERT_WORKER_COUNT
+          value: "4"
+        - name: REPLACEMENT_STRATEGY
+          value: "rolling"
+        - name: DRY_RUN
+          value: "false"
+        - name: ALLOWED_NAMESPACES
+          value: "*"
+        - name: BLOCKED_NAMESPACES
+          value: "kube-system,kube-public,kube-node-lease"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/reconciler-engine
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: config
+        configMap:
+          name: reconciler-engine-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reconciler-engine-config
+  namespace: incident-response
+data:
+  config.yaml: |
+    # Reconciler Engine Configuration
+    reconciler_id: ""
+    cluster_name: "vsphere-cluster"
+    namespace: "incident-response"
+
+    kubeconfig_path: ""
+    qps: 100
+    burst: 200
+
+    http_addr: ":8080"
+    http_read_timeout: "10s"
+    http_write_timeout: "10s"
+    http_idle_timeout: "60s"
+    http_max_header_bytes: 1048576
+
+    alert_queue_size: 1000
+    alert_batch_size: 50
+    alert_batch_delay: "500ms"
+    alert_worker_count: 4
+
+    network_policy_name_prefix: "irp-isolate-"
+    network_policy_duration: "1h"
+    default_deny_all_policy: true
+
+    replacement_strategy: "rolling"
+    replacement_timeout: "5m"
+    min_ready_seconds: 10
+    max_surge: "25%"
+    max_unavailable: "25%"
+
+    target_label_selector: "app.kubernetes.io/managed-by=incident-response"
+    target_annotation_key: "incident-response/replacement-for"
+    target_deployment_name: ""
+    target_statefulset_name: ""
+    target_daemonset_name: ""
+
+    dry_run: false
+    allowed_namespaces: ["*"]
+    blocked_namespaces: ["kube-system", "kube-public", "kube-node-lease"]
+    require_annotation: ""
+    max_concurrent_policies: 10
+    max_concurrent_replacements: 5
+
+    policy_create_rate_limit: 10
+    policy_delete_rate_limit: 5
+    replacement_rate_limit: 2
+
+    health_check_interval: "30s"
+    metrics_interval: "15s"
+
+    max_retries: 3
+    retry_base_delay: "1s"
+    retry_max_delay: "30s"
+
+    enable_network_policy_cleanup: true
+    enable_pod_replacement: true
+    enable_dry_run_by_default: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reconciler-engine
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: reconciler-engine
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  - port: 9090
+    targetPort: 9090
+    name: metrics
+  selector:
+    app.kubernetes.io/name: reconciler-engine

@@ -1,0 +1,44 @@
+# hadolint configuration
+# See https://github.com/hadolint/hadolint
+
+# Ignored rules
+ignored:
+  # DL3008: Pin versions in apt get install
+  - DL3008
+  # DL3009: Delete the apt-get lists after installing something
+  - DL3009
+  # DL3015: Avoid additional packages by specifying --no-install-recommends
+  - DL3015
+  # DL3018: Pin versions in apk add
+  - DL3018
+  # DL3042: Avoid cache directory with pip
+  - DL3042
+  # DL3059: Multiple consecutive RUN instructions
+  - DL3059
+
+# Trusted registries
+trustedRegistries:
+  - registry.local
+  - gcr.io
+  - ghcr.io
+  - docker.io
+
+# Required labels
+labelSchema:
+  - org.opencontainers.image.title
+  - org.opencontainers.image.description
+  - org.opencontainers.image.version
+  - org.opencontainers.image.created
+  - org.opencontainers.image.authors
+  - org.opencontainers.image.vendor
+  - org.opencontainers.image.licenses
+  - org.opencontainers.image.source
+  - org.opencontainers.image.revision
+
+# File paths
+dockerfiles:
+  - cmd/telemetry-sensor/Dockerfile
+  - cmd/threat-contextualizer/Dockerfile
+  - cmd/reconciler-engine/Dockerfile
+  - deploy/registry/harbor/docker-compose.yml
+  - deploy/registry/basic-registry/docker-compose.yml

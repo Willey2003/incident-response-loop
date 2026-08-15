@@ -1,0 +1,151 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: telemetry-sensor
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: telemetry-sensor
+    app.kubernetes.io/part-of: incident-response-loop
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: threat-contextualizer
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: threat-contextualizer
+    app.kubernetes.io/part-of: incident-response-loop
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: reconciler-engine
+  namespace: incident-response
+  labels:
+    app.kubernetes.io/name: reconciler-engine
+    app.kubernetes.io/part-of: incident-response-loop
+---
+# Role for telemetry-sensor: read-only access to pods, nodes, metrics
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: telemetry-sensor
+  namespace: incident-response
+rules:
+# Pod metrics and metadata
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch"]
+# Metrics from kubelet/cAdvisor (requires proxy subresource)
+- apiGroups: [""]
+  resources: ["nodes/proxy"]
+  verbs: ["get", "create"]
+  resourceNames: ["*"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: telemetry-sensor-binding
+  namespace: incident-response
+subjects:
+- kind: ServiceAccount
+  name: telemetry-sensor
+  namespace: incident-response
+roleRef:
+  kind: Role
+  name: telemetry-sensor
+  apiGroup: rbac.authorization.k8s.io
+---
+# Role for threat-contextualizer: minimal - only needs to receive HTTP alerts
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: threat-contextualizer
+  namespace: incident-response
+rules:
+# No Kubernetes API access needed - receives alerts via HTTP
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get"]  # For potential config reload
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: threat-contextualizer-binding
+  namespace: incident-response
+subjects:
+- kind: ServiceAccount
+  name: threat-contextualizer
+  namespace: incident-response
+roleRef:
+  kind: Role
+  name: threat-contextualizer
+  apiGroup: rbac.authorization.k8s.io
+---
+# Role for reconciler-engine: NetworkPolicy management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reconciler-networkpolicy
+  namespace: incident-response
+rules:
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["create", "get", "list", "watch", "delete", "patch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get"]
+---
+# Role for reconciler-engine: Workload management (Deployments, StatefulSets, DaemonSets)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reconciler-workload
+  namespace: incident-response
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reconciler-networkpolicy-binding
+  namespace: incident-response
+subjects:
+- kind: ServiceAccount
+  name: reconciler-engine
+  namespace: incident-response
+roleRef:
+  kind: Role
+  name: reconciler-networkpolicy
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reconciler-workload-binding
+  namespace: incident-response
+subjects:
+- kind: ServiceAccount
+  name: reconciler-engine
+  namespace: incident-response
+roleRef:
+  kind: Role
+  name: reconciler-workload
+  apiGroup: rbac.authorization.k8s.io

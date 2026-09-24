@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Byte-compile all Python
+        run: python -m compileall -q packages services test
+      - name: Shell syntax check
+        run: |
+          set -e
+          find scripts -name '*.sh' -print0 | xargs -0 -I{} bash -n {}

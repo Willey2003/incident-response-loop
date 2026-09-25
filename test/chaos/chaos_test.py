@@ -196,7 +196,7 @@ class ChaosTester:
             log.error("Failed to create test pod", error=str(e))
             return None
 
-    async _inject_anomaly(self, scenario: str) -> Optional[Dict[str, Any]]:
+    async def _inject_anomaly(self, scenario: str) -> Optional[Dict[str, Any]]:
         """Inject a mock anomaly into the telemetry sensor."""
         anomaly_id = f"anom-{uuid.uuid4().hex[:12]}"
         timestamp = datetime.now(timezone.utc).isoformat()

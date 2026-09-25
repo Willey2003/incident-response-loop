@@ -70,7 +70,7 @@ class TokenBlacklist:
     """Manage token blacklist in Redis."""
     
     def __init__(self, redis_client):
-        self.redis = redis
+        self.redis = redis_client
         self.prefix = "blacklist:"
     
     async def add(self, token: str, expires_in: int) -> None:
@@ -96,7 +96,7 @@ def get_password_hash(password: str) -> str:
 
 # JWT functions
 def create_access_token(
-    data: Dict[str, any],
+    data: Dict[str, Any],
     expires_delta: Optional[timedelta] = None,
     token_type: str = "access",
 ) -> str:
@@ -115,14 +115,14 @@ def create_access_token(
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_refresh_token(data: Dict[str, any]) -> str:
+def create_refresh_token(data: Dict[str, Any]) -> str:
     expire = datetime.utcnow() + timedelta(days=settings.JWT_REFRESH_EXPIRY_DAYS)
     to_encode = data.copy()
     to_encode.update({
         "exp": int(expire.timestamp()),
         "iat": int(datetime.utcnow().timestamp()),
         "token_type": "refresh",
-    }
+    })
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
@@ -147,7 +147,7 @@ async def get_token_blacklist() -> TokenBlacklist:
     redis_client = get_redis()
     if redis_client is None:
         raise RuntimeError("Redis not initialized")
-    return TokenBlacklist(redis)
+    return TokenBlacklist(redis_client)
 
 
 # OIDC configuration (Keycloak)

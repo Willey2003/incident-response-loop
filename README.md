@@ -74,7 +74,7 @@ A production-grade, CPU-only cyber-defense and resilient cloud-orchestration pla
 ### 2. Build & Push Images
 
 ```bash
-cd /home/gaganpreet/aegisforge
+cd incident-response-loop
 make docker-build
 REGISTRY=your-registry.example.com make push
 ```
